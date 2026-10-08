@@ -15,12 +15,12 @@ macOS and iOS builds are set up but haven't been tested yet.
 
 Get the latest version from the [releases page](../../releases/latest).
 
-- **Android**: `app-arm64-v8a-release.apk` works on almost every phone from the last few years.
-  Older 32-bit phones need `app-armeabi-v7a-release.apk`. Android will ask you to allow
+- **Android**: `shu-<version>-android-arm64-v8a.apk` works on almost every phone from the last
+  few years. Older 32-bit phones need the `armeabi-v7a` one. Android will ask you to allow
   installing apps from your browser or file manager.
-- **Linux**: unpack the `.tar.gz` and run `shu`. It needs libmpv (`libmpv2` on Debian/Ubuntu,
-  `mpv-libs` on Fedora, `mpv` on Arch).
-- **Windows**: unpack the `.zip` and run `shu.exe`.
+- **Linux**: unpack `shu-<version>-linux-x64.tar.gz` and run `shu/shu`. It needs libmpv
+  (`libmpv2` on Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
+- **Windows**: unpack `shu-<version>-windows-x64.zip` and run `Shu\shu.exe`.
 
 ## Adding extensions
 
