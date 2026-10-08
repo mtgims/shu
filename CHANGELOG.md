@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 - 2026-10-09
+
+### New
+- Shu has its own icon: 书 (shū, "book"), with its dot drawn as sound waves. On Android it
+  follows themed icons, and the playback notification uses it too
+
 ## 0.2.1 - 2026-10-08
 
 ### Changed

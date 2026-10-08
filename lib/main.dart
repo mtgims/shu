@@ -48,6 +48,7 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
           config: const AudioServiceConfig(
             androidNotificationChannelId: 'io.player.shu.playback',
             androidNotificationChannelName: 'Audiobook playback',
+            androidNotificationIcon: 'drawable/ic_stat_shu',
             androidNotificationOngoing: true,
             androidStopForegroundOnPause: true,
             fastForwardInterval: AudiobookPlayer.skipForward,
