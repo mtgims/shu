@@ -51,41 +51,10 @@ See [docs/EXTENSIONS.md](docs/EXTENSIONS.md). Extensions are plain JavaScript an
 device, so there's no server to set up. Shu also supports addons that run on a server, see
 [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## Building
-
-You need Flutter 3.47 or newer. On Linux, also the libmpv development files (`libmpv-dev` on
-Debian/Ubuntu).
-
-```sh
-flutter run -d linux                            # run it
-flutter build linux --release                   # build/linux/x64/release/bundle/
-flutter build apk --release --split-per-abi     # build/app/outputs/flutter-apk/
-flutter build windows --release                 # on Windows, with Visual Studio
-```
-
-## Tests
-
-```sh
-flutter analyze
-flutter test
-```
-
-The integration tests run the real app, so they need a device or a desktop session. Run them
-one file at a time:
-
-```sh
-flutter test integration_test/extension_engine_test.dart -d linux   # the JS extension engine
-flutter test integration_test/playback_test.dart -d linux           # plays a few seconds of silence
-flutter test integration_test/tour_test.dart -d linux               # clicks through the whole app
-```
-
-The tour installs two example extensions from a repository served on your machine, so it works
-offline.
-
 ## Contributing
 
-Bug reports and pull requests are welcome. For anything bigger than a fix, open an issue first
-so we can talk it over. Please add a line to [CHANGELOG.md](CHANGELOG.md) under a new version.
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+build Shu and run the tests.
 
 ## License
 
