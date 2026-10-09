@@ -1,7 +1,7 @@
 # Extensions (v1)
 
 An extension is a single JavaScript file that runs **inside the app**, on the user's device. It
-finds audiobooks and turns chapters into playable links. Nothing runs on a server, and settings
+lists books and tells the app how to play their chapters. Nothing runs on a server, and settings
 (API keys, preferences) never leave the device.
 
 The app runs extensions in QuickJS (JavaScriptCore on Apple platforms): plain ES2020, no DOM,

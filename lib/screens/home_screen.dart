@@ -274,7 +274,7 @@ class _Welcome extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Add audiobooks you have as files, sign in to your Audiobookshelf or Jellyfin '
-                'server, or add an extension that finds books for you.',
+                'server, or add an extension.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

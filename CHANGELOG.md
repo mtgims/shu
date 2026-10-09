@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 - 2026-10-09
+
+### Changed
+- Clearer wording on the welcome screen and in the extension docs
+
 ## 0.3.0 - 2026-10-09
 
 ### New

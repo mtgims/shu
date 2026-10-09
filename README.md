@@ -79,8 +79,8 @@ There are two kinds of extensions:
 
 - **Catalogs** fill Home with books to explore (trending, new releases, genres) and describe
   them: narrator, length, rating, series.
-- **Sources** find versions you can actually play. Press Play on a catalog book and the app asks
-  your sources for versions and starts the best match.
+- **Sources** provide the audio. Press Play on a catalog book and the app asks your sources for
+  matching versions and starts the best one.
 
 Shu doesn't host, index or link to any content. What you can play depends entirely on the
 extensions you choose to install.
