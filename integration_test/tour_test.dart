@@ -97,7 +97,8 @@ void main() {
           .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
           .clearSnackBars();
       await tap(tester, find.text('Addons').last);
-      await tap(tester, find.text('Add addon').last);
+      await tap(tester, find.text('Add').last);
+      await tap(tester, find.text('Extension or repository'));
       await tester.enterText(find.byType(TextField), repository);
       await tap(tester, find.text('Install'));
       await waitFor(tester, find.text(name));

@@ -46,9 +46,13 @@ class CoverImage extends ImageProvider<CoverImage> {
       MultiFrameImageStreamCompleter(codec: _load(decode), scale: 1);
 
   Future<ui.Codec> _load(ImageDecoderCallback decode) async {
-    final file = File('${(await _cacheDir()).path}/${_fileName(url)}');
+    // Covers of books on this device are read where they are.
+    final local = url.startsWith('file:')
+        ? File(Uri.parse(url).toFilePath())
+        : null;
+    final file = local ?? File('${(await _cacheDir()).path}/${_fileName(url)}');
     Uint8List bytes;
-    if (await file.exists()) {
+    if (local != null || await file.exists()) {
       bytes = await file.readAsBytes();
     } else {
       final res = await _http

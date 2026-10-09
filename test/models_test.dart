@@ -84,4 +84,25 @@ void main() {
       expect(dressed.isWork, isFalse);
     },
   );
+
+  test('chapters inside one file keep their file and start', () {
+    final chapter = Chapter.fromJson({
+      'id': 'f@1',
+      'title': 'Two',
+      'file': 'f',
+      'start': 61.5,
+    });
+    expect(chapter.start, const Duration(milliseconds: 61500));
+    final again = Chapter.fromJson(chapter.toJson());
+    expect(again.file, 'f');
+    expect(again.start, chapter.start);
+    expect(again.sharesFileWith(chapter), isTrue);
+    expect(
+      const Chapter(
+        id: 'a',
+        title: 'A',
+      ).sharesFileWith(const Chapter(id: 'b', title: 'B')),
+      isFalse,
+    );
+  });
 }

@@ -9,6 +9,7 @@ import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
 import '../widgets/cover.dart';
+import 'local_book_menu.dart';
 import 'now_playing_screen.dart';
 import 'versions.dart';
 
@@ -149,7 +150,18 @@ class _BookScreenState extends State<BookScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(
+        actions: [
+          if (widget.addon.isLocal)
+            LocalBookMenu(
+              bookId: widget.summary.id,
+              onChanged: () => setState(() {
+                ContentCache.forgetBook(widget.addon, widget.summary.id);
+                _book = _load();
+              }),
+            ),
+        ],
+      ),
       body: FutureBuilder<Book>(
         future: _book,
         initialData: _stored,
@@ -178,7 +190,7 @@ class _BookScreenState extends State<BookScreen> {
     final summary = book ?? widget.look ?? widget.summary;
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final facts = [
-      if (book?.durationMinutes != null) _duration(book!.durationMinutes!),
+      if ((book?.durationMinutes ?? 0) > 0) _duration(book!.durationMinutes!),
       if (book?.rating != null) '★ ${book!.rating!.toStringAsFixed(1)}',
       ?book?.year,
     ];

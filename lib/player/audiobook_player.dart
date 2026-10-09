@@ -33,6 +33,13 @@ class SleepTimer {
   final bool endOfChapter;
 }
 
+/// The open book. [changed] tells listeners that something inside it moved, like the chapter.
+class CurrentEntry extends ValueNotifier<LibraryEntry?> {
+  CurrentEntry() : super(null);
+
+  void changed() => notifyListeners();
+}
+
 /// Plays one book at a time, chapter by chapter. It is also the audio_service handler, so the
 /// lock screen, notification and media keys drive the same object as the app's UI.
 class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
@@ -47,6 +54,10 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
               const Duration(seconds: 15),
               (_) => _saveProgress(notify: false),
             )
+          : null;
+      _chapterTimer?.cancel();
+      _chapterTimer = playing && _inFileChapters
+          ? Timer.periodic(const Duration(seconds: 1), (_) => _syncChapter())
           : null;
     });
     _player.processingStateStream.listen((state) {
@@ -74,7 +85,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
 
   final status = ValueNotifier<PlayerStatus>(PlayerStatus.idle);
-  final current = ValueNotifier<LibraryEntry?>(null);
+  final current = CurrentEntry();
   final sleepTimer = ValueNotifier<SleepTimer?>(null);
 
   InstalledAddon? _addon;
@@ -82,7 +93,14 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   Timer? _retryTimer;
   Timer? _sleepTimer;
   Timer? _saveTimer;
-  final Map<String, ({String url, DateTime at})> _links = {};
+  Timer? _chapterTimer;
+  final Map<String, ({String url, DateTime until})> _links = {};
+
+  /// The link the audio player has open, so chapters in the same file only seek.
+  String? _loadedUrl;
+
+  /// When playback last failed and was restarted on its own (a link may have expired).
+  DateTime? _recoveredAt;
 
   /// Smooth position updates, for the seek bar.
   Stream<Duration> get positionStream => _player.positionStream;
@@ -113,11 +131,9 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await _saveProgress();
     final entry = _library.entryFor(addon.id, book, workKey: workKey);
     if (chapterIndex != null && chapterIndex != entry.chapterIndex) {
-      entry.chapterIndex = chapterIndex;
-      entry.position = Duration.zero;
+      _moveTo(entry, chapterIndex);
     } else if (chapterIndex == null && entry.finished) {
-      entry.chapterIndex = 0;
-      entry.position = Duration.zero;
+      _moveTo(entry, 0);
     }
     entry.finished = false;
     if (sourceId != null && sourceId != entry.sourceId) {
@@ -153,7 +169,11 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   }
 
   /// Tells the system (notification, lock screen, media keys) what is loaded.
-  void _announce(InstalledAddon addon, LibraryEntry entry) {
+  void _announce(
+    InstalledAddon addon,
+    LibraryEntry entry, {
+    Duration? duration,
+  }) {
     final chapter = entry.book.chapters[entry.chapterIndex];
     mediaItem.add(
       MediaItem(
@@ -161,11 +181,64 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         title: chapter.title,
         album: entry.book.title,
         artist: entry.book.byline.isEmpty ? null : entry.book.byline,
+        duration: duration,
         artUri: entry.book.cover == null
             ? null
             : Uri.tryParse(entry.book.cover!),
       ),
     );
+  }
+
+  /// Puts [entry] at the start of chapter [index].
+  static void _moveTo(LibraryEntry entry, int index) {
+    entry.chapterIndex = index;
+    entry.position = entry.book.chapters[index].start ?? Duration.zero;
+  }
+
+  /// Whether the open chapter shares its audio file with other chapters (an M4B).
+  bool get _inFileChapters {
+    final entry = current.value;
+    return entry != null &&
+        entry.book.chapters[entry.chapterIndex].file != null;
+  }
+
+  /// Follows the position through chapters that share one file: the chapter shown, the lock
+  /// screen and the library move along with playback.
+  void _syncChapter() {
+    final entry = current.value;
+    final addon = _addon;
+    if (entry == null ||
+        addon == null ||
+        status.value.phase != PlayerPhase.ready) {
+      return;
+    }
+    final chapters = entry.book.chapters;
+    final here = chapters[entry.chapterIndex];
+    if (here.file == null) return;
+    final position = _player.position;
+    Duration startOf(int i) => chapters[i].start ?? Duration.zero;
+    var index = entry.chapterIndex;
+    while (index + 1 < chapters.length &&
+        chapters[index + 1].sharesFileWith(here) &&
+        startOf(index + 1) <= position) {
+      index++;
+    }
+    while (index > 0 &&
+        chapters[index - 1].sharesFileWith(here) &&
+        startOf(index) > position) {
+      index--;
+    }
+    if (index == entry.chapterIndex) return;
+    final forward = index > entry.chapterIndex;
+    entry.chapterIndex = index;
+    entry.position = position;
+    _announce(addon, entry, duration: _player.duration);
+    current.changed();
+    unawaited(_library.save(entry));
+    if (forward && sleepTimer.value?.endOfChapter == true) {
+      cancelSleepTimer();
+      unawaited(pause());
+    }
   }
 
   /// Saves where the user is, e.g. when the app goes to the background.
@@ -194,10 +267,9 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       return;
     }
     await _saveProgress();
-    entry.chapterIndex = index;
-    entry.position = Duration.zero;
+    _moveTo(entry, index);
     await _library.save(entry);
-    current.value = entry;
+    current.changed();
     await _loadChapter(play: true);
   }
 
@@ -221,19 +293,28 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         _retryTimer = Timer(_retryEvery, () => _loadChapter(play: play));
         return;
       }
-      // A stalled server or audio device must not leave the player loading forever.
-      await _player
-          .setUrl(url, initialPosition: entry.position)
-          .timeout(
-            _openTimeout,
-            onTimeout: () => throw AddonException(
-              'The audio did not start within ${_openTimeout.inSeconds} seconds.',
-            ),
-          );
+      if (url == _loadedUrl &&
+          _player.processingState != ProcessingState.idle) {
+        // Another chapter of the file that is open already.
+        await _player.seek(entry.position);
+        _announce(addon, entry, duration: _player.duration);
+      } else {
+        _loadedUrl = null;
+        // A stalled server or audio device must not leave the player loading forever.
+        await _player
+            .setUrl(url, initialPosition: entry.position)
+            .timeout(
+              _openTimeout,
+              onTimeout: () => throw AddonException(
+                'The audio did not start within ${_openTimeout.inSeconds} seconds.',
+              ),
+            );
+        _loadedUrl = url;
+      }
       if (token != _loadToken) return;
       status.value = const PlayerStatus(PlayerPhase.ready);
       if (play) unawaited(_player.play());
-      unawaited(_prefetch(addon, entry, entry.chapterIndex + 1));
+      unawaited(_prefetch(addon, entry, _nextFile(entry)));
     } on Object catch (e) {
       if (token != _loadToken) return;
       status.value = PlayerStatus(PlayerPhase.error, message: _describe(e));
@@ -247,10 +328,9 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     int index,
   ) async {
     final chapter = entry.book.chapters[index];
-    final key = '${addon.id}|${entry.book.id}|${chapter.id}';
+    final key = _linkKey(addon, entry, index);
     final cached = _links[key];
-    if (cached != null &&
-        DateTime.now().difference(cached.at) < _linkLifetime) {
+    if (cached != null && DateTime.now().isBefore(cached.until)) {
       return cached.url;
     }
 
@@ -267,8 +347,11 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     }
 
     switch (await addon.client.resolve(source)) {
-      case Playable(:final url):
-        _links[key] = (url: url, at: DateTime.now());
+      case Playable(:final url, :final validFor):
+        final lifetime = validFor != null && validFor < _linkLifetime
+            ? validFor
+            : _linkLifetime;
+        _links[key] = (url: url, until: DateTime.now().add(lifetime));
         return url;
       case Downloading(:final message, :final progress):
         if (current.value?.key == entry.key && index == entry.chapterIndex) {
@@ -281,6 +364,12 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         }
         return null;
     }
+  }
+
+  /// Chapters in one file share their link.
+  static String _linkKey(InstalledAddon addon, LibraryEntry entry, int index) {
+    final chapter = entry.book.chapters[index];
+    return '${addon.id}|${entry.book.id}|${chapter.file ?? chapter.id}';
   }
 
   static Source _pickSource(List<Source> sources, String? preferred) {
@@ -307,21 +396,34 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// The first chapter after the open one that plays from another file.
+  static int _nextFile(LibraryEntry entry) {
+    final chapters = entry.book.chapters;
+    final here = chapters[entry.chapterIndex];
+    var i = entry.chapterIndex + 1;
+    while (i < chapters.length && chapters[i].sharesFileWith(here)) {
+      i++;
+    }
+    return i;
+  }
+
+  /// The open file ended.
   void _onChapterEnd() {
     final entry = current.value;
     if (entry == null) return;
+    final next = _nextFile(entry);
     if (sleepTimer.value?.endOfChapter == true) {
       cancelSleepTimer();
       unawaited(_player.pause());
-      if (entry.chapterIndex + 1 < entry.book.chapters.length) {
-        entry.chapterIndex++;
-        entry.position = Duration.zero;
+      if (next < entry.book.chapters.length) {
+        _moveTo(entry, next);
+        current.changed();
         unawaited(_library.save(entry).then((_) => _loadChapter(play: false)));
       }
       return;
     }
-    if (entry.chapterIndex + 1 < entry.book.chapters.length) {
-      unawaited(playChapter(entry.chapterIndex + 1));
+    if (next < entry.book.chapters.length) {
+      unawaited(playChapter(next));
     } else {
       entry.finished = true;
       entry.position = Duration.zero;
@@ -339,6 +441,23 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   }
 
   void _onPlaybackError(Object error, StackTrace stack) {
+    final entry = current.value;
+    final last = _recoveredAt;
+    // Links can expire while a long file plays (server logins last an hour). Once in a while,
+    // get a fresh link and carry on where playback stopped instead of showing an error.
+    if (entry != null &&
+        status.value.phase == PlayerPhase.ready &&
+        (last == null || DateTime.now().difference(last).inMinutes >= 5)) {
+      _recoveredAt = DateTime.now();
+      final addon = _addon;
+      if (addon != null) {
+        _links.remove(_linkKey(addon, entry, entry.chapterIndex));
+      }
+      entry.position = _player.position;
+      _loadedUrl = null;
+      unawaited(_loadChapter(play: _player.playing));
+      return;
+    }
     status.value = PlayerStatus(
       PlayerPhase.error,
       message: 'Playback failed: ${_describe(error)}',
@@ -404,7 +523,10 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   Future<void> togglePlay() => _player.playing ? pause() : play();
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+    _syncChapter();
+  }
 
   @override
   Future<void> fastForward() => _seekBy(skipForward);
@@ -417,7 +539,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     var target = _player.position + offset;
     if (target < Duration.zero) target = Duration.zero;
     if (end != null && target > end) target = end;
-    await _player.seek(target);
+    await seek(target);
   }
 
   @override
@@ -431,9 +553,11 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   Future<void> skipToPrevious() async {
     final entry = current.value;
     if (entry == null) return;
-    if (_player.position > const Duration(seconds: 5) ||
+    final start =
+        entry.book.chapters[entry.chapterIndex].start ?? Duration.zero;
+    if (_player.position - start > const Duration(seconds: 5) ||
         entry.chapterIndex == 0) {
-      await _player.seek(Duration.zero);
+      await _player.seek(start);
     } else {
       await playChapter(entry.chapterIndex - 1);
     }
@@ -453,6 +577,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     _retryTimer?.cancel();
     cancelSleepTimer();
     await _player.stop();
+    _loadedUrl = null;
     current.value = null;
     mediaItem.add(null);
     status.value = PlayerStatus.idle;
@@ -480,6 +605,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   Future<void> dispose() async {
     _saveTimer?.cancel();
+    _chapterTimer?.cancel();
     await _saveProgress();
     await _player.dispose();
   }

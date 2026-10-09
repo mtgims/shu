@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0 - 2026-10-09
+
+### New
+- Play your own audiobooks: Library → Add audiobooks. On Android the files are copied into the
+  app; on Linux and Windows you can add a whole folder and the files stay where they are
+- Titles, authors, covers and chapters are read from the files' tags; fix them with Edit details
+- Sign in to your Audiobookshelf or Jellyfin server (Addons → Add) to browse, search and stream
+  its audiobook libraries
+- M4B books show and skip between the chapters inside the file
+- A welcome screen with the ways to get started
+
+### Changed
+- The Add button on Addons now asks what to add: a server or an extension
+- Home rows with the same name say which server they come from
+
+### Fixed
+- The player didn't always show the new chapter's title when a chapter ended
+- When a stream link expires in the middle of a book, playback picks up again where it stopped
+  instead of showing an error
+
 ## 0.2.2 - 2026-10-09
 
 ### New

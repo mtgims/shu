@@ -68,7 +68,11 @@ Errors are any non-2xx status with `{ "error": "message" }`.
 | `year` | string | optional |
 | `chapters` | Chapter[] | in listening order, at least one |
 
-**Chapter**: `{ "id": string, "title": string, "size": bytes?, "duration": seconds? }`
+**Chapter**: `{ "id": string, "title": string, "size": bytes?, "duration": seconds?, "file": string?, "start": seconds? }`
+
+Chapters inside one audio file (an M4B) share a `file` key and give their `start` in that file.
+The app opens the file once and seeks between them; their sources return the same link. Leave
+both out for a chapter that is a file of its own.
 
 ## `GET {base}/sources/{bookId}/{chapterId}.json`
 

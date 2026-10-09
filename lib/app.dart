@@ -101,12 +101,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   late final _destinations = [
-    _Destination(
-      'Home',
-      Icons.home_outlined,
-      Icons.home,
-      HomeScreen(onOpenAddons: () => setState(() => _index = 3)),
-    ),
+    _Destination('Home', Icons.home_outlined, Icons.home, const HomeScreen()),
     const _Destination('Search', Icons.search, Icons.search, SearchScreen()),
     const _Destination(
       'Library',

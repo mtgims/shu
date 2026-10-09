@@ -9,11 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../extensions/engine.dart';
 import '../extensions/extension_backend.dart';
 import '../extensions/host.dart';
+import '../sources/local_library.dart';
+import '../sources/server.dart';
 import 'backend.dart';
 import 'client.dart';
 import 'models.dart';
 
-enum AddonKind { remote, extension }
+enum AddonKind { remote, extension, local, server }
 
 class InstalledAddon {
   InstalledAddon.remote({required String this.base, required this.manifest})
@@ -21,6 +23,15 @@ class InstalledAddon {
       client = AddonClient(base),
       updateUrl = null,
       engine = null;
+
+  /// Part of the app: books on this device, or a media server the user signed in to.
+  InstalledAddon.builtin({
+    required this.kind,
+    required this.manifest,
+    required this.client,
+  }) : base = null,
+       updateUrl = null,
+       engine = null;
 
   InstalledAddon.extension({
     required this.manifest,
@@ -43,6 +54,11 @@ class InstalledAddon {
 
   String get id => manifest.id;
   bool get isExtension => kind == AddonKind.extension;
+  bool get isLocal => kind == AddonKind.local;
+
+  /// The media server behind a server addon.
+  ServerBackend? get server =>
+      client is ServerBackend ? client as ServerBackend : null;
 }
 
 /// An extension offered by a repository index (docs/EXTENSIONS.md).
@@ -75,22 +91,35 @@ class Repository extends InstallResult {
   final List<RepoEntry> entries;
 }
 
-/// Installed remote addons and extensions. The list and settings live in shared preferences,
-/// extension code in files.
+/// Installed remote addons, extensions and servers, and the books on this device. The list and
+/// settings live in shared preferences, extension code in files.
 class AddonStore extends ChangeNotifier {
-  AddonStore._(this._prefs, this._dir, this.host);
+  AddonStore._(this._prefs, this._dir, this.host, this.local);
 
   static Future<AddonStore> load(
     SharedPreferences prefs, {
     ExtensionHost? host,
   }) async {
-    final dir = Directory(
-      '${(await getApplicationSupportDirectory()).path}/extensions',
+    final support = (await getApplicationSupportDirectory()).path;
+    final store = AddonStore._(
+      prefs,
+      Directory('$support/extensions'),
+      host ?? ExtensionHost(),
+      await LocalLibrary.load(Directory('$support/local')),
     );
-    final store = AddonStore._(prefs, dir, host ?? ExtensionHost());
+    store._addons.add(
+      InstalledAddon.builtin(
+        kind: AddonKind.local,
+        manifest: LocalBackend.manifest,
+        client: LocalBackend(store.local),
+      ),
+    );
     await store._restore();
     return store;
   }
+
+  /// Audiobooks added from this device.
+  final LocalLibrary local;
 
   static const _key = 'addons';
   static const _updateEvery = Duration(hours: 24);
@@ -116,6 +145,14 @@ class AddonStore extends ChangeNotifier {
     for (final item in jsonDecode(raw) as List) {
       try {
         final json = item as Map<String, dynamic>;
+        if (json['kind'] == 'server') {
+          _addons.add(
+            _serverAddon(
+              ServerBackend.fromJson(json['server'] as Map<String, dynamic>),
+            ),
+          );
+          continue;
+        }
         final manifest = Manifest.fromJson(
           json['manifest'] as Map<String, dynamic>,
         );
@@ -150,6 +187,23 @@ class AddonStore extends ChangeNotifier {
       settings: settingsOf(manifest),
     ),
   );
+
+  InstalledAddon _serverAddon(ServerBackend server) {
+    // Renewed tokens must survive a restart.
+    server.onLoginChanged = _save;
+    return InstalledAddon.builtin(
+      kind: AddonKind.server,
+      manifest: server.manifest,
+      client: server,
+    );
+  }
+
+  /// Adds a server the user signed in to (signing in again to one replaces it).
+  Future<InstalledAddon> addServer(ServerBackend server) async {
+    final addon = _serverAddon(server);
+    await _put(addon);
+    return addon;
+  }
 
   File _codeFile(String id) =>
       File('${_dir.path}/${id.replaceAll(RegExp(r'[^\w.-]'), '_')}.js');
@@ -257,7 +311,9 @@ class AddonStore extends ChangeNotifier {
   Future<void> _put(InstalledAddon addon) async {
     final at = _addons.indexWhere((a) => a.id == addon.id);
     if (at >= 0) {
-      _addons[at].client.dispose();
+      if (!identical(_addons[at].client, addon.client)) {
+        _addons[at].client.dispose();
+      }
       _addons[at] = addon;
     } else {
       _addons.add(addon);
@@ -266,6 +322,7 @@ class AddonStore extends ChangeNotifier {
   }
 
   Future<void> remove(InstalledAddon addon) async {
+    if (addon.isLocal) return;
     _addons.removeWhere((a) => a.id == addon.id);
     addon.client.dispose();
     if (addon.isExtension) {
@@ -275,6 +332,7 @@ class AddonStore extends ChangeNotifier {
         await _prefs.remove('$key${addon.id}');
       }
     }
+    if (addon.server != null) await _prefs.remove('server.checked.${addon.id}');
     await _save();
   }
 
@@ -283,12 +341,15 @@ class AddonStore extends ChangeNotifier {
       _key,
       jsonEncode([
         for (final a in _addons)
-          {
-            'kind': a.kind.name,
-            'manifest': a.manifest.toJson(),
-            'base': ?a.base,
-            'updateUrl': ?a.updateUrl,
-          },
+          if (a.server case final server?)
+            {'kind': 'server', 'server': server.toJson()}
+          else if (!a.isLocal)
+            {
+              'kind': a.kind.name,
+              'manifest': a.manifest.toJson(),
+              'base': ?a.base,
+              'updateUrl': ?a.updateUrl,
+            },
       ]),
     );
     notifyListeners();
@@ -312,9 +373,31 @@ class AddonStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Libraries added or renamed on a server show up as rows: checked at most once a day.
+  Future<void> _refreshServers({required bool force}) async {
+    for (final addon in [..._addons.where((a) => a.server != null)]) {
+      final key = 'server.checked.${addon.id}';
+      final checked = DateTime.tryParse(_prefs.getString(key) ?? '');
+      if (!force &&
+          checked != null &&
+          DateTime.now().difference(checked) < _updateEvery) {
+        continue;
+      }
+      try {
+        final server = addon.server!;
+        await server.refreshLibraries();
+        await _prefs.setString(key, DateTime.now().toIso8601String());
+        await _put(_serverAddon(server));
+      } on Object catch (e) {
+        debugPrint('Library check for ${addon.manifest.name} failed: $e');
+      }
+    }
+  }
+
   /// Updates extensions whose last check is older than a day. A check without changes costs one
   /// small request (the server answers 304 to the stored ETag). Returns the updated names.
   Future<List<String>> checkUpdates({bool force = false}) async {
+    await _refreshServers(force: force);
     final updated = <String>[];
     for (final addon in [
       ..._addons.where((a) => a.isExtension && a.updateUrl != null),

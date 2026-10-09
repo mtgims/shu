@@ -240,6 +240,8 @@ class Chapter {
     required this.title,
     this.size,
     this.duration,
+    this.file,
+    this.start,
   });
 
   final String id;
@@ -249,18 +251,34 @@ class Chapter {
   /// Seconds, when the addon knows it.
   final int? duration;
 
-  factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
-    id: json['id'].toString(),
-    title: _string(json['title']) ?? 'Chapter',
-    size: _int(json['size']),
-    duration: _int(json['duration']),
-  );
+  /// Chapters inside one audio file (an M4B) share a [file] key and begin at [start] in it.
+  final String? file;
+  final Duration? start;
+
+  /// Whether [other] plays from the same audio file as this chapter.
+  bool sharesFileWith(Chapter other) => file != null && file == other.file;
+
+  factory Chapter.fromJson(Map<String, dynamic> json) {
+    final start = json['start'];
+    return Chapter(
+      id: json['id'].toString(),
+      title: _string(json['title']) ?? 'Chapter',
+      size: _int(json['size']),
+      duration: _int(json['duration']),
+      file: _string(json['file']),
+      start: start is num
+          ? Duration(milliseconds: (start * 1000).round())
+          : null,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
     'size': size,
     'duration': duration,
+    'file': ?file,
+    if (start != null) 'start': start!.inMilliseconds / 1000,
   };
 }
 
@@ -415,8 +433,11 @@ sealed class Resolved {
 }
 
 class Playable extends Resolved {
-  const Playable(this.url);
+  const Playable(this.url, {this.validFor});
   final String url;
+
+  /// How long the link works, when it expires sooner than links usually do.
+  final Duration? validFor;
 }
 
 class Downloading extends Resolved {

@@ -4,7 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../addons/addon_store.dart';
 import '../app.dart';
+import '../sources/server.dart';
 import '../widgets/cover_image.dart';
+import 'connect_server.dart';
 import 'extension_settings_screen.dart';
 
 class AddonsScreen extends StatelessWidget {
@@ -16,24 +18,24 @@ class AddonsScreen extends StatelessWidget {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Addons')),
+      // Tabs stay alive side by side, so their buttons must not share a hero tag.
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showDialog<void>(
-          context: context,
-          builder: (_) => const _AddDialog(),
-        ),
+        heroTag: null,
+        onPressed: () => showAddSource(context),
         icon: const Icon(Icons.add),
-        label: const Text('Add addon'),
+        label: const Text('Add'),
       ),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
-          final addons = store.addons;
+          final addons = store.addons.where((a) => !a.isLocal).toList();
           if (addons.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
                 child: Text(
-                  'Nothing installed yet. Tap Add addon and paste the link to an extension or a repository of extensions.',
+                  'Nothing added yet. Tap Add to sign in to your Audiobookshelf or Jellyfin server, '
+                  'or to paste the link to an extension.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -60,6 +62,7 @@ class _AddonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final m = addon.manifest;
+    final server = addon.server;
     final catalogs = m.catalogs
         .map((c) => c.search ? '${c.name} (search)' : c.name)
         .join(', ');
@@ -75,7 +78,10 @@ class _AddonCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: m.logo == null
-                      ? const Icon(Icons.extension, size: 40)
+                      ? Icon(
+                          server != null ? Icons.dns_outlined : Icons.extension,
+                          size: 40,
+                        )
                       : Image(
                           image: ResizeImage(CoverImage(m.logo!), width: 120),
                           width: 40,
@@ -92,7 +98,9 @@ class _AddonCard extends StatelessWidget {
                     children: [
                       Text(m.name, style: theme.textTheme.titleMedium),
                       Text(
-                        addon.isExtension
+                        server != null
+                            ? 'Server · ${server.base.host}'
+                            : addon.isExtension
                             ? 'v${m.version} · runs on this device'
                             : 'v${m.version} · ${Uri.tryParse(addon.base ?? '')?.host ?? ''}',
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -120,7 +128,14 @@ class _AddonCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (addon.isExtension && m.settings.isNotEmpty)
+                if (server != null)
+                  TextButton.icon(
+                    onPressed: () =>
+                        connectServer(context, server.kind, server: server),
+                    icon: const Icon(Icons.login),
+                    label: const Text('Sign in again'),
+                  )
+                else if (addon.isExtension && m.settings.isNotEmpty)
                   TextButton.icon(
                     onPressed: () =>
                         Navigator.of(context)
@@ -176,6 +191,46 @@ class _AddonCard extends StatelessWidget {
       ),
     );
     if (ok == true) await store.remove(addon);
+  }
+}
+
+/// What can be added: a server to sign in to, or an extension by its link.
+Future<void> showAddSource(BuildContext context) async {
+  final choice = await showModalBottomSheet<Object>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final kind in ServerKind.values)
+            ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: Text('${kind.label} server'),
+              subtitle: Text(
+                'Sign in to play the books on your ${kind.label} server',
+              ),
+              onTap: () => Navigator.pop(context, kind),
+            ),
+          ListTile(
+            leading: const Icon(Icons.extension_outlined),
+            title: const Text('Extension or repository'),
+            subtitle: const Text('Paste a link to install one'),
+            onTap: () => Navigator.pop(context, 'extension'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (!context.mounted) return;
+  switch (choice) {
+    case ServerKind kind:
+      await connectServer(context, kind);
+    case 'extension':
+      await showDialog<void>(
+        context: context,
+        builder: (_) => const _AddDialog(),
+      );
   }
 }
 

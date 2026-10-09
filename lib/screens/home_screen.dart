@@ -6,12 +6,12 @@ import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
 import '../widgets/book_tiles.dart';
+import 'add_books.dart';
+import 'addons_screen.dart';
 import 'catalog_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.onOpenAddons});
-
-  final VoidCallback onOpenAddons;
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -27,15 +27,20 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Shu')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([scope.addons, scope.library]),
+        listenable: Listenable.merge([
+          scope.addons,
+          scope.library,
+          scope.addons.local,
+        ]),
         builder: (context, _) {
           final addons = scope.addons.addons;
           final inProgress = scope.library.entries
               .where((e) => !e.finished)
               .take(12)
               .toList();
-          if (addons.isEmpty) {
-            return _NoAddons(onOpenAddons: widget.onOpenAddons);
+          final local = scope.addons.local;
+          if (local.books.isEmpty && addons.every((a) => a.isLocal)) {
+            return const _Welcome();
           }
 
           // Catalog extensions first; sources (which find versions to play) after.
@@ -43,6 +48,16 @@ class _HomeScreenState extends State<HomeScreen> {
             ...addons.where((a) => !a.manifest.releases),
             ...addons.where((a) => a.manifest.releases),
           ];
+          // Rows with the same name (a library called "Audiobooks" on two servers) say where
+          // they come from.
+          final names = <String, int>{};
+          for (final a in ordered) {
+            for (final c in a.manifest.catalogs.where((c) => !c.search)) {
+              names[c.name] = (names[c.name] ?? 0) + 1;
+            }
+          }
+          String titleOf(InstalledAddon a, CatalogInfo c) =>
+              names[c.name]! > 1 ? '${c.name} · ${a.manifest.name}' : c.name;
           final rows = <Widget Function()>[
             if (inProgress.isNotEmpty)
               () => _continueListening(context, inProgress),
@@ -53,9 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 catalog.genres.isNotEmpty
                     ? () => _GenreRow(addon: addon, catalog: catalog)
                     : () => _CatalogRow(
-                        key: ValueKey('${addon.id}/${catalog.id}/$_generation'),
+                        key: ValueKey(
+                          '${addon.id}/${catalog.id}/$_generation/'
+                          '${addon.isLocal ? local.revision : 0}',
+                        ),
                         addon: addon,
                         catalog: catalog,
+                        title: titleOf(addon, catalog),
                       ),
           ];
 
@@ -136,10 +155,16 @@ class _GenreRow extends StatelessWidget {
 }
 
 class _CatalogRow extends StatefulWidget {
-  const _CatalogRow({super.key, required this.addon, required this.catalog});
+  const _CatalogRow({
+    super.key,
+    required this.addon,
+    required this.catalog,
+    required this.title,
+  });
 
   final InstalledAddon addon;
   final CatalogInfo catalog;
+  final String title;
 
   @override
   State<_CatalogRow> createState() => _CatalogRowState();
@@ -176,7 +201,7 @@ class _CatalogRowState extends State<_CatalogRow> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.catalog.name;
+    final title = widget.title;
     final books = _books;
     if (books == null && _error != null) {
       return ListTile(
@@ -219,40 +244,56 @@ class _CatalogRowState extends State<_CatalogRow> {
   }
 }
 
-class _NoAddons extends StatelessWidget {
-  const _NoAddons({required this.onOpenAddons});
-  final VoidCallback onOpenAddons;
+/// The first screen: nothing to show until the user adds books, a server or an extension.
+class _Welcome extends StatelessWidget {
+  const _Welcome();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.extension, size: 48, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              'Add an addon to get started',
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Extensions find audiobooks for you. Add one by pasting its link.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Icon(
+                Icons.headphones,
+                size: 48,
+                color: theme.colorScheme.primary,
               ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onOpenAddons,
-              icon: const Icon(Icons.add),
-              label: const Text('Add addon'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'Welcome to Shu',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add audiobooks you have as files, sign in to your Audiobookshelf or Jellyfin '
+                'server, or add an extension that finds books for you.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => addBooksFromDevice(context),
+                icon: const Icon(Icons.library_add_outlined),
+                label: const Text('Add audiobooks from this device'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => showAddSource(context),
+                icon: const Icon(Icons.dns_outlined),
+                label: const Text('Add a server or extension'),
+              ),
+            ],
+          ),
         ),
       ),
     );

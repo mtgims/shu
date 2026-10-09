@@ -28,6 +28,7 @@ one file at a time:
 ```sh
 flutter test integration_test/extension_engine_test.dart -d linux   # the JS extension engine
 flutter test integration_test/playback_test.dart -d linux           # plays a few seconds of silence
+flutter test integration_test/local_books_test.dart -d linux        # books from files, chapters in one file
 flutter test integration_test/tour_test.dart -d linux               # clicks through the whole app
 ```
 
