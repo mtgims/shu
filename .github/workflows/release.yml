@@ -1,5 +1,7 @@
 # Builds the desktop versions and attaches them to a release. The Android APKs are signed with
-# the release key, so they're built and uploaded by hand when creating the release.
+# the release key, so they're built and uploaded by hand when creating the release, named
+# shu-android-arm64-v8a.apk and shu-android-armeabi-v7a.apk. The names carry no version so the
+# README can link to releases/latest/download/<name>.
 name: Release
 
 on:
@@ -23,8 +25,8 @@ jobs:
       - name: Package
         run: |
           mv build/linux/x64/release/bundle shu
-          tar -czf shu-${{ github.event.release.tag_name }}-linux-x64.tar.gz shu
-      - run: gh release upload ${{ github.event.release.tag_name }} shu-*-linux-x64.tar.gz
+          tar -czf shu-linux-x64.tar.gz shu
+      - run: gh release upload ${{ github.event.release.tag_name }} shu-linux-x64.tar.gz
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -40,7 +42,7 @@ jobs:
       - name: Package
         run: |
           Move-Item build\windows\x64\runner\Release Shu
-          Compress-Archive -Path Shu -DestinationPath shu-${{ github.event.release.tag_name }}-windows-x64.zip
-      - run: gh release upload ${{ github.event.release.tag_name }} (Get-Item shu-*-windows-x64.zip).Name
+          Compress-Archive -Path Shu -DestinationPath shu-windows-x64.zip
+      - run: gh release upload ${{ github.event.release.tag_name }} shu-windows-x64.zip
         env:
           GH_TOKEN: ${{ github.token }}

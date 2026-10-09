@@ -15,6 +15,10 @@ for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   png icon.svg "${d#*:}" "$app/android/app/src/main/res/mipmap-${d%%:*}/ic_launcher.png"
 done
 
+# README header on GitHub
+mkdir -p "$app/.github/assets"
+png icon.svg 224 "$app/.github/assets/icon.png"
+
 # Windows
 for s in 16 24 32 48 64 128 256; do png icon.svg $s "$tmp/$s.png"; done
 magick "$tmp"/{16,24,32,48,64,128,256}.png "$app/windows/runner/resources/app_icon.ico"

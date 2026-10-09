@@ -14,6 +14,8 @@
 ### Changed
 - The Add button on Addons now asks what to add: a server or an extension
 - Home rows with the same name say which server they come from
+- Downloads on the releases page have the same names every version, so the buttons on the
+  project page always get the newest one
 
 ### Fixed
 - The player didn't always show the new chapter's title when a chapter ended

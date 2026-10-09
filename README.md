@@ -1,8 +1,26 @@
+<div align="center">
+
+<img src=".github/assets/icon.png" width="112" alt="">
+
 # Shu
 
-Shu is an audiobook player for Android, Linux and Windows. It plays audiobooks you have as
-files, streams the ones on your Audiobookshelf or Jellyfin server, and can be extended with
-small JavaScript extensions that tell it where else to find books.
+**An audiobook player for Android, Linux and Windows.**
+
+It plays the audiobooks you have as files, streams the ones on your Audiobookshelf or Jellyfin
+server, and can be extended with small JavaScript extensions.
+
+<a href="https://github.com/mtgims/shu/releases/latest/download/shu-android-arm64-v8a.apk"><img alt="Download for Android" src="https://img.shields.io/badge/Android-APK-e8b04a?style=for-the-badge&logo=android&logoColor=white"></a>
+<a href="https://github.com/mtgims/shu/releases/latest/download/shu-linux-x64.tar.gz"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-tar.gz-e8b04a?style=for-the-badge&logo=linux&logoColor=white"></a>
+<a href="https://github.com/mtgims/shu/releases/latest/download/shu-windows-x64.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-zip-e8b04a?style=for-the-badge&logo=windows&logoColor=white"></a>
+
+<a href="https://github.com/mtgims/shu/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mtgims/shu?style=flat&color=e8b04a&label=latest"></a>
+<a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-GPL--3.0--or--later-e8b04a?style=flat"></a>
+
+</div>
+
+---
+
+## What it does
 
 - Your own audiobooks: MP3, M4B, M4A, FLAC, Ogg and more, with chapters read from M4B files
 - Audiobookshelf and Jellyfin servers: browse, search and stream your libraries
@@ -15,14 +33,14 @@ macOS and iOS builds are set up but haven't been tested yet.
 
 ## Download
 
-Get the latest version from the [releases page](../../releases/latest).
+The buttons above get the latest version; older ones are on the
+[releases page](https://github.com/mtgims/shu/releases).
 
-- **Android**: `shu-<version>-android-arm64-v8a.apk` works on almost every phone from the last
-  few years. Older 32-bit phones need the `armeabi-v7a` one. Android will ask you to allow
-  installing apps from your browser or file manager.
-- **Linux**: unpack `shu-<version>-linux-x64.tar.gz` and run `shu/shu`. It needs libmpv
-  (`libmpv2` on Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
-- **Windows**: unpack `shu-<version>-windows-x64.zip` and run `Shu\shu.exe`.
+- **Android**: the APK works on almost every phone from the last few years. Older 32-bit phones
+  need the [32-bit APK](https://github.com/mtgims/shu/releases/latest/download/shu-android-armeabi-v7a.apk) instead. Android will ask you to allow installing apps from your browser or file manager.
+- **Linux**: unpack `shu-linux-x64.tar.gz` and run `shu/shu`. It needs libmpv (`libmpv2` on
+  Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
+- **Windows**: unpack `shu-windows-x64.zip` and run `Shu\shu.exe`.
 
 ## Your own audiobooks
 
