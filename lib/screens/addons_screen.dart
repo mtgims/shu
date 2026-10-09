@@ -353,7 +353,7 @@ class _AddDialogState extends State<_AddDialog> {
       );
     }
     return AlertDialog(
-      title: const Text('Add addon'),
+      title: const Text('Add an extension'),
       content: SizedBox(
         width: 480,
         child: TextField(

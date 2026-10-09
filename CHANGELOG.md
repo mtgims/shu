@@ -31,8 +31,6 @@
 ### Changed
 - Shu is now open source, under the GPL-3.0
 - The app is now called Shu
-- New app ID, io.player.shu. Android installs it as a separate app: add your extensions again
-  and remove the old Audiobooks app
 
 ## 0.2.0 - 2026-10-08
 
