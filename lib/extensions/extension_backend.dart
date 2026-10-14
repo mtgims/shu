@@ -44,6 +44,10 @@ class ExtensionBackend implements AddonBackend {
   }
 
   @override
+  Future<List<BookSummary>> series(String bookId) async =>
+      catalogPageFromJson(await _call('series', [bookId])).books;
+
+  @override
   Future<Book> book(String bookId) async {
     final json = await _call('book', [bookId]);
     try {

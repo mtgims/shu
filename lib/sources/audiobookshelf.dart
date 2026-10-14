@@ -183,19 +183,20 @@ class AudiobookshelfBackend extends ServerBackend {
     if (catalogId == 'search') {
       final query = search?.trim() ?? '';
       if (query.isEmpty) return (books: <BookSummary>[], hasMore: false);
-      final books = <BookSummary>[];
-      for (final l in libraries) {
-        final json = await _get('/api/libraries/${l.id}/search', {
-          'q': query,
-          'limit': '25',
-        });
-        for (final hit
-            in (json['book'] as List? ?? const [])
-                .cast<Map<String, dynamic>>()) {
-          books.add(_summary(hit['libraryItem'] as Map<String, dynamic>));
-        }
-      }
-      return (books: books, hasMore: false);
+      final results = await Future.wait([
+        for (final l in libraries)
+          _get('/api/libraries/${l.id}/search', {'q': query, 'limit': '25'}),
+      ]);
+      return (
+        books: [
+          for (final json in results)
+            for (final hit
+                in (json['book'] as List? ?? const [])
+                    .cast<Map<String, dynamic>>())
+              _summary(hit['libraryItem'] as Map<String, dynamic>),
+        ],
+        hasMore: false,
+      );
     }
     final library = catalogId.substring('lib:'.length);
     final json = await _get('/api/libraries/$library/items', {
@@ -321,6 +322,9 @@ class AudiobookshelfBackend extends ServerBackend {
 
   @override
   Future<List<BookSummary>> releases(Book work) async => const [];
+
+  @override
+  Future<List<BookSummary>> series(String bookId) async => const [];
 
   @override
   void dispose() => _http.close();

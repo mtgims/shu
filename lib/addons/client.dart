@@ -49,7 +49,9 @@ class AddonClient implements AddonBackend {
     try {
       res = await _http.get(uri).timeout(_timeout);
     } on Exception catch (e) {
-      throw AddonException('Could not reach the addon (${uri.host}): $e');
+      // ClientException's text includes the URL, which may hold the user's settings.
+      final reason = e is http.ClientException ? e.message : '$e';
+      throw AddonException('Could not reach the addon (${uri.host}): $reason');
     }
     Map<String, dynamic> body;
     try {
@@ -136,6 +138,9 @@ class AddonClient implements AddonBackend {
   /// The HTTP protocol has no versions lookup (yet).
   @override
   Future<List<BookSummary>> releases(Book work) async => const [];
+
+  @override
+  Future<List<BookSummary>> series(String bookId) async => const [];
 
   @override
   void dispose() => _http.close();

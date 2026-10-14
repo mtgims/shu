@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_js/flutter_js.dart';
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
+import 'package:http/http.dart' as http;
 
 import '../addons/backend.dart';
 import 'host.dart';
@@ -167,7 +168,12 @@ class ExtensionEngine {
       value = await host.run(op, args);
       ok = true;
     } on Object catch (e) {
-      value = e is AddonException ? e.message : '$op failed: $e';
+      value = switch (e) {
+        AddonException(:final message) => message,
+        // Its text includes the URL, and URLs may hold API keys.
+        http.ClientException(:final message) => '$op failed: $message',
+        _ => '$op failed: $e',
+      };
       ok = false;
     }
     if (!identical(rt, _rt)) return; // the engine was shut down meanwhile

@@ -164,6 +164,7 @@ void main() {
     await waitFor(tester, find.text('Versions'));
     await waitFor(tester, find.text('The Quiet Orchard (MP3)'));
     expect(find.textContaining('9 h 12 min'), findsOneWidget);
+    await waitFor(tester, find.text('In this series'));
     await shot(tester, '06-book');
 
     // Play: the version starts, with the catalog's title on it.

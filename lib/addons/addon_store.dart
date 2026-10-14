@@ -400,7 +400,10 @@ class AddonStore extends ChangeNotifier {
     await _refreshServers(force: force);
     final updated = <String>[];
     for (final addon in [
-      ..._addons.where((a) => a.isExtension && a.updateUrl != null),
+      ..._addons.where(
+        (a) =>
+            a.isExtension && a.updateUrl != null && updatesSafely(a.updateUrl!),
+      ),
     ]) {
       final checkedKey = 'ext.checked.${addon.id}';
       final checked = DateTime.tryParse(_prefs.getString(checkedKey) ?? '');
@@ -431,6 +434,19 @@ class AddonStore extends ChangeNotifier {
     }
     return updated;
   }
+}
+
+/// Whether new code may be fetched from [url] on its own. Over plain http anyone on the same
+/// network could swap in code that reads the extension's API keys; this device itself is fine.
+bool updatesSafely(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  return uri.isScheme('https') ||
+      uri.isScheme('file') ||
+      (uri.isScheme('http') &&
+          (uri.host == 'localhost' ||
+              uri.host == '127.0.0.1' ||
+              uri.host == '::1'));
 }
 
 /// Compares dotted versions numerically ("1.10.0" > "1.9.2").

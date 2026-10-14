@@ -153,15 +153,24 @@ class LocalLibrary extends ChangeNotifier {
 
   static Future<LocalLibrary> load(Directory dir) async {
     final library = LocalLibrary._(dir);
+    final file = library._index;
+    if (!await file.exists()) return library;
+    final List<Object?> items;
     try {
-      final file = library._index;
-      if (await file.exists()) {
-        for (final item in jsonDecode(await file.readAsString()) as List) {
-          library._books.add(LocalBook.fromJson(item as Map<String, dynamic>));
-        }
-      }
+      items = jsonDecode(await file.readAsString()) as List;
     } on Object catch (e) {
       debugPrint('Unreadable list of books on this device: $e');
+      // The next save would overwrite it: keep a copy to recover from.
+      await file.copy('${file.path}.bad');
+      return library;
+    }
+    // One broken book must not lose the others when the list is saved again.
+    for (final item in items) {
+      try {
+        library._books.add(LocalBook.fromJson(item as Map<String, dynamic>));
+      } on Object catch (e) {
+        debugPrint('Dropping unreadable book on this device: $e');
+      }
     }
     return library;
   }
@@ -374,6 +383,9 @@ class LocalBackend implements AddonBackend {
 
   @override
   Future<List<BookSummary>> releases(Book work) async => const [];
+
+  @override
+  Future<List<BookSummary>> series(String bookId) async => const [];
 
   @override
   Future<Resolved> resolve(Source source) async => Playable(source.url!);

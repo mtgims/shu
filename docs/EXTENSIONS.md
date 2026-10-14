@@ -38,6 +38,7 @@ extension = {
   async book(bookId) { return Book; },
   async sources(bookId, chapterId) { return { sources: [Source], message: '…' }; },
   async releases(book) { return { books: [BookSummary] }; },   // sources only
+  async series(bookId) { return { books: [BookSummary] }; },  // catalogs, optional
   async resolve(resolveData) { return { url } /* or */ /* { status: 'downloading', message, progress } */; },
 };
 ```
@@ -59,6 +60,8 @@ Extensions come in two kinds, and one extension can be both:
 - A **catalog** lists books and describes them. Its books may have no chapters
   (`chapters: []`): the app then treats them as catalog books and asks the sources for versions.
   Book pages can also carry `durationMinutes`, `rating` (0 to 5), `genres` and `series`.
+  When a book has `series`, the app asks `series(bookId)` for the other books of the series, in
+  reading order, and shows them on the page once they arrive.
 - A **source** finds playable versions. It sets `releases: true` in its manifest and implements
   `releases(book)`, which gets `{ title, authors, narrators, durationMinutes, year }` and returns
   matching books (with chapters) of its own, best first. The app shows them as the catalog book's

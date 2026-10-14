@@ -185,5 +185,25 @@ void main() {
         ),
       );
     });
+
+    test('network errors never show the URL', () async {
+      final offline = AddonClient(
+        base,
+        httpClient: MockClient(
+          (req) async =>
+              throw http.ClientException('Connection refused', req.url),
+        ),
+      );
+      expect(
+        () => offline.book('lib:abc'),
+        throwsA(
+          isA<AddonException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('Connection refused'), isNot(contains('eyJj'))),
+          ),
+        ),
+      );
+    });
   });
 }

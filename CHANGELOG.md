@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.1 - 2026-10-14
+
+### New
+- Catalog books show the other books of their series, when the catalog knows them
+
+### Changed
+- Extensions installed from a plain http:// address (other than this device) no longer update
+  on their own: someone on the same network could have swapped in other code. Install them
+  again from an https:// address to get updates
+- Signing in to a server by its domain name (like books.example.org) tries https first, so the
+  password isn't sent in the clear when the server has https
+- Searching Audiobookshelf asks all its libraries at once
+
+### Fixed
+- When the connection dropped, error messages could show an addon's or extension's full web
+  address, API keys included
+- Progress bars move while you listen, not only from one chapter to the next (a book in one
+  file showed 0% until it was finished)
+- A cover cut off while downloading could stay broken; it's now fetched again
+- One unreadable book in "On this device" no longer makes the books after it disappear
+- At start, the player shows the last book that can still play, also when the most recent
+  one came from an addon you removed
+
 ## 0.4.0 - 2026-10-14
 
 ### New

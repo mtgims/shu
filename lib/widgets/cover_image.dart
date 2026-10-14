@@ -62,7 +62,14 @@ class CoverImage extends ImageProvider<CoverImage> {
         throw StateError('Cover download failed (HTTP ${res.statusCode})');
       }
       bytes = res.bodyBytes;
-      unawaited(file.writeAsBytes(bytes, flush: false).catchError((_) => file));
+      // Written aside, then renamed: a write cut short must not become the cover for good.
+      final tmp = File('${file.path}.tmp');
+      unawaited(
+        tmp
+            .writeAsBytes(bytes, flush: true)
+            .then((t) => t.rename(file.path))
+            .catchError((_) => file),
+      );
     }
     return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
   }

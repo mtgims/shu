@@ -42,6 +42,22 @@ void main() {
       );
     });
 
+    test('tries https first only for a bare domain name', () {
+      expect(
+        secureAddress('books.example.org/abs/').toString(),
+        'https://books.example.org/abs',
+      );
+      for (final local in [
+        '192.168.1.5',
+        'nas.local',
+        'nas',
+        'books.example.org:13378',
+        'http://books.example.org',
+      ]) {
+        expect(secureAddress(local), isNull, reason: local);
+      }
+    });
+
     test('rejects what is not an address', () {
       expect(
         () => serverAddress('ftp://x', ServerKind.jellyfin),

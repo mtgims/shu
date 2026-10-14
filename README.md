@@ -42,6 +42,14 @@ The buttons above get the latest version; older ones are on the
   Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
 - **Windows**: unpack `shu-windows-x64.zip` and run `Shu\shu.exe`.
 
+Shu checks for a new version once a day. On Android it downloads and installs it for you (the
+first time, Android asks you to allow installs from Shu); on Linux and Windows it opens the
+download page. You can also check under **Addons → ⋮ → Check for updates**.
+
+If playback stops at the end of a chapter while the screen is off, your phone's battery saver is
+probably cutting Shu off (common on Xiaomi, Samsung and Huawei phones). Set Shu's battery usage
+to **Unrestricted** (on Xiaomi: Settings → Apps → Shu → Battery saver → No restrictions).
+
 ## Your own audiobooks
 
 Open **Library → Add audiobooks**.

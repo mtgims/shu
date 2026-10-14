@@ -34,9 +34,20 @@ class LibraryEntry {
   String get key => keyOf(addonId, book.id);
   static String keyOf(String addonId, String bookId) => '$addonId|$bookId';
 
-  double get progress => finished
-      ? 1
-      : (chapterIndex / book.chapters.length).clamp(0, 1).toDouble();
+  double get progress {
+    if (finished) return 1;
+    if (book.chapters.isEmpty) return 0;
+    final chapter = book.chapters[chapterIndex];
+    // A single file of unknown length: the catalog's length stands in.
+    final seconds =
+        chapter.duration ??
+        (book.chapters.length == 1 ? (book.durationMinutes ?? 0) * 60 : 0);
+    final into = position - (chapter.start ?? Duration.zero);
+    final part = seconds > 0 ? (into.inSeconds / seconds).clamp(0, 1) : 0;
+    return ((chapterIndex + part) / book.chapters.length)
+        .clamp(0, 1)
+        .toDouble();
+  }
 
   Map<String, dynamic> toJson() => {
     'addonId': addonId,

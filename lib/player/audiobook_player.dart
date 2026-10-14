@@ -188,9 +188,12 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   /// Puts the most recent unfinished book back in the player, paused, as the app starts. Its
   /// link is fetched a moment later, quietly, so pressing play starts at once.
   void restoreLastSession() {
-    final entry = _library.entries.where((e) => !e.finished).firstOrNull;
-    final addon = entry == null ? null : _addons.byId(entry.addonId);
-    if (entry == null || addon == null) return;
+    // Skips books whose addon was removed, so an older one that still plays comes back.
+    final entry = _library.entries
+        .where((e) => !e.finished && _addons.byId(e.addonId) != null)
+        .firstOrNull;
+    if (entry == null) return;
+    final addon = _addons.byId(entry.addonId)!;
     _addon = addon;
     current.value = entry;
     _announce(addon, entry);

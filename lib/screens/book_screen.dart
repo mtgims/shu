@@ -8,6 +8,7 @@ import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
+import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
 import 'local_book_menu.dart';
 import 'now_playing_screen.dart';
@@ -41,6 +42,7 @@ class _BookScreenState extends State<BookScreen> {
   late Future<Book> _book = _load();
   Future<SourceList>? _sources;
   Future<List<Version>>? _versions;
+  Future<List<BookSummary>>? _series;
   String? _sourceId;
   bool _expanded = false;
   bool _starting = false;
@@ -61,6 +63,12 @@ class _BookScreenState extends State<BookScreen> {
   void _prepare(Book book) {
     if (book.isWork) {
       _versions = findVersions(AppScope.of(context).addons, book);
+      if (book.series != null) {
+        _series = widget.addon.client.series(book.id).catchError((Object e) {
+          debugPrint('No series row for ${book.id}: $e');
+          return <BookSummary>[];
+        });
+      }
       return;
     }
     final entry = AppScope.of(context).library.find(widget.addon.id, book.id);
@@ -382,6 +390,7 @@ class _BookScreenState extends State<BookScreen> {
                         ),
                         onOpen: (v) => _openVersion(book, v),
                       ),
+                      _SeriesRow(addon: widget.addon, books: _series),
                     ],
                     if (book != null && !book.isWork) ...[
                       const SizedBox(height: 20),
@@ -590,6 +599,54 @@ class _Problem extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The other books of the series, shown once the catalog found them; nothing before or without.
+class _SeriesRow extends StatelessWidget {
+  const _SeriesRow({required this.addon, required this.books});
+
+  final InstalledAddon addon;
+  final Future<List<BookSummary>>? books;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<BookSummary>>(
+      future: books,
+      builder: (context, snap) {
+        final list = snap.data;
+        if (list == null || list.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 20),
+            Text(
+              'In this series',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 230,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: list.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 4),
+                itemBuilder: (context, i) {
+                  final book = list[i];
+                  return BookCard(
+                    title: book.title,
+                    subtitle: book.details ?? book.byline,
+                    cover: book.cover,
+                    onTapDown: () => ContentCache.book(addon, book.id),
+                    onTap: () => openBook(context, addon, book),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

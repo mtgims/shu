@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -51,18 +52,57 @@ abstract class ServerBackend implements AddonBackend {
     String user,
     String password,
   ) async {
-    final base = serverAddress(address, kind);
-    final ServerBackend server = switch (kind) {
-      ServerKind.audiobookshelf => await AudiobookshelfBackend.signIn(
-        base,
-        user,
-        password,
-      ),
-      ServerKind.jellyfin => await JellyfinBackend.signIn(base, user, password),
-    };
-    await server.refreshLibraries();
-    return server;
+    Future<ServerBackend> at(Uri base) async {
+      final ServerBackend server = switch (kind) {
+        ServerKind.audiobookshelf => await AudiobookshelfBackend.signIn(
+          base,
+          user,
+          password,
+        ),
+        ServerKind.jellyfin => await JellyfinBackend.signIn(
+          base,
+          user,
+          password,
+        ),
+      };
+      await server.refreshLibraries();
+      return server;
+    }
+
+    final plain = serverAddress(address, kind);
+    // Before sending the password in the clear, try https where it is likely.
+    // shortcut: only falls back when https can't be reached at all; another site answering on
+    // https shows its error, and the user types http:// to get past it.
+    if (secureAddress(address) case final secure?) {
+      try {
+        return await at(secure);
+      } on Unreachable {
+        // No https there: plain http below.
+      }
+    }
+    return at(plain);
   }
+}
+
+/// For a bare domain name (`books.example.org`), the https address to try first: servers
+/// reached by name usually sit behind an https proxy. Null for addresses on the local network,
+/// with a port, or with a scheme.
+Uri? secureAddress(String input) {
+  final text = input.trim();
+  if (text.contains('://')) return null;
+  final uri = Uri.tryParse('https://$text');
+  if (uri == null ||
+      uri.hasPort ||
+      !uri.host.contains('.') ||
+      InternetAddress.tryParse(uri.host) != null ||
+      RegExp(r'\.(local|lan|home|internal)$').hasMatch(uri.host)) {
+    return null;
+  }
+  return Uri(
+    scheme: 'https',
+    host: uri.host,
+    path: uri.path.replaceAll(RegExp(r'/+$'), ''),
+  );
 }
 
 /// The server's base address from what the user typed: `host`, `host:port` or a full URL,
@@ -136,7 +176,7 @@ class ServerHttp {
         await _client.send(request).timeout(_timeout),
       ).timeout(_timeout);
     } on Object catch (e) {
-      throw AddonException('Could not reach $name (${base.host}): $e');
+      throw Unreachable('Could not reach $name (${base.host}): $e');
     }
     Object? json;
     try {
@@ -175,6 +215,11 @@ class ServerHttp {
 }
 
 /// The server no longer accepts the login: the user has to sign in again.
+/// No answer at all: nothing listening, no connection, or a TLS failure.
+class Unreachable extends AddonException {
+  Unreachable(super.message);
+}
+
 class SignedOut extends AddonException {
   SignedOut(String name)
     : super('$name signed you out. Sign in again from Addons.');

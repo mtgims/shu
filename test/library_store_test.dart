@@ -34,6 +34,48 @@ void main() {
     expect(reloaded.progress, closeTo(2 / 3, 0.001));
   });
 
+  test('progress counts the position inside the chapter', () {
+    LibraryEntry at(Book b, int chapter, int minutes) => LibraryEntry(
+      addonId: 'a',
+      book: b,
+      chapterIndex: chapter,
+      position: Duration(minutes: minutes),
+    );
+    const timed = Book(
+      id: 't',
+      title: 'Timed',
+      chapters: [
+        Chapter(id: '0', title: 'One', duration: 600),
+        Chapter(id: '1', title: 'Two', duration: 600),
+      ],
+    );
+    expect(at(timed, 1, 5).progress, closeTo(0.75, 0.001));
+    // Chapters inside one file: the position counts from the chapter's start.
+    const m4b = Book(
+      id: 'm',
+      title: 'M4B',
+      chapters: [
+        Chapter(id: '0', title: 'One', duration: 600, file: 'f'),
+        Chapter(
+          id: '1',
+          title: 'Two',
+          duration: 600,
+          file: 'f',
+          start: Duration(minutes: 10),
+        ),
+      ],
+    );
+    expect(at(m4b, 1, 15).progress, closeTo(0.75, 0.001));
+    // One file of unknown length: the book's length from the catalog.
+    const single = Book(
+      id: 's',
+      title: 'Single',
+      durationMinutes: 100,
+      chapters: [Chapter(id: '-1', title: 'All')],
+    );
+    expect(at(single, 0, 25).progress, closeTo(0.25, 0.001));
+  });
+
   test('a book that lost chapters keeps a valid chapter index', () async {
     final prefs = await SharedPreferences.getInstance();
     final store = LibraryStore(prefs);

@@ -74,8 +74,9 @@ extension = {
   async book(id) {
     var b = books.filter(function (x) { return x.id === id; })[0];
     return Object.assign({}, b, { description: 'A book for testing.', durationMinutes: 552,
-      rating: 4.6, genres: ['Fantasy'], chapters: [] });
+      rating: 4.6, genres: ['Fantasy'], series: 'Orchard Tales, book 1', chapters: [] });
   },
+  async series(id) { return { books: books.slice(1, 4), hasMore: false }; },
 };
 ''';
 
