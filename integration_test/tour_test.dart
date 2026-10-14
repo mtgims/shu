@@ -11,6 +11,7 @@ import 'package:audiobooks/widgets/book_tiles.dart';
 import 'package:audiobooks/widgets/mini_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -172,8 +173,12 @@ void main() {
     await waitFor(tester, find.byIcon(Icons.pause_rounded));
     expect(find.text('Part 1'), findsWidgets);
     await shot(tester, '07-player');
-    await tap(tester, find.byTooltip('Pause'));
-    await tap(tester, find.byTooltip('Close'));
+    // Desktop keys: Space pauses from anywhere, Esc closes the player.
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await waitFor(tester, find.byIcon(Icons.play_arrow_rounded));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester, 500);
+    await shot(tester, '07b-player-bar');
     await back(tester);
 
     await tap(tester, find.text('Search').last);

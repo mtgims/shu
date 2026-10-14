@@ -10,6 +10,7 @@ import '../app.dart';
 import '../library/library_store.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
+import '../widgets/mini_player.dart';
 import 'local_book_menu.dart';
 import 'now_playing_screen.dart';
 import 'versions.dart';
@@ -201,6 +202,8 @@ class _BookScreenState extends State<BookScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Playback stays at hand on pages opened over the main screen.
+      bottomNavigationBar: const MiniPlayer(),
       appBar: AppBar(
         actions: [
           if (widget.addon.isLocal)
@@ -626,23 +629,18 @@ class _SeriesRow extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
-            SizedBox(
-              height: 230,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: list.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 4),
-                itemBuilder: (context, i) {
-                  final book = list[i];
-                  return BookCard(
+            CardStrip(
+              padding: EdgeInsets.zero,
+              children: [
+                for (final book in list)
+                  BookCard(
                     title: book.title,
                     subtitle: book.details ?? book.byline,
                     cover: book.cover,
                     onTapDown: () => ContentCache.book(addon, book.id),
                     onTap: () => openBook(context, addon, book),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
           ],
         );

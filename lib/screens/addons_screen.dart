@@ -7,7 +7,10 @@ import '../app.dart';
 import '../sources/server.dart';
 import '../updates/update_banner.dart';
 import '../updates/updater.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/more_menu.dart';
+import 'about.dart';
 import 'connect_server.dart';
 import 'extension_settings_screen.dart';
 
@@ -21,18 +24,21 @@ class AddonsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Addons'),
+        titleSpacing: 16 + readableInset(context),
         actions: [
-          if (Updater.enabled)
-            PopupMenuButton<String>(
-              tooltip: 'More',
-              onSelected: (_) => _checkForUpdate(context),
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'update',
-                  child: Text('Check for updates'),
+          MoreMenu(
+            items: [
+              if (Updater.enabled)
+                MenuItemButton(
+                  onPressed: () => _checkForUpdate(context),
+                  child: const Text('Check for updates'),
                 ),
-              ],
-            ),
+              MenuItemButton(
+                onPressed: () => showAbout(context),
+                child: const Text('About Shu'),
+              ),
+            ],
+          ),
         ],
       ),
       // Tabs stay alive side by side, so their buttons must not share a hero tag.
@@ -61,8 +67,9 @@ class AddonsScreen extends StatelessWidget {
               ),
             );
           }
+          final side = 16 + readableInset(context);
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            padding: EdgeInsets.fromLTRB(side, 8, side, 96),
             children: [for (final addon in addons) _AddonCard(addon: addon)],
           );
         },
@@ -233,9 +240,8 @@ class _AddonCard extends StatelessWidget {
 
 /// What can be added: a server to sign in to, or an extension by its link.
 Future<void> showAddSource(BuildContext context) async {
-  final choice = await showModalBottomSheet<Object>(
-    context: context,
-    showDragHandle: true,
+  final choice = await showPanel<Object>(
+    context,
     builder: (context) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,

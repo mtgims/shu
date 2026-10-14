@@ -4,6 +4,7 @@ import '../addons/addon_store.dart';
 import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../widgets/book_tiles.dart';
+import '../widgets/mini_player.dart';
 
 /// A whole catalog (or one genre of it) as a grid that loads more as you scroll.
 class CatalogScreen extends StatefulWidget {
@@ -77,6 +78,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Playback stays at hand on pages opened over the main screen.
+      bottomNavigationBar: const MiniPlayer(),
       appBar: AppBar(title: Text(widget.title)),
       body: NotificationListener<ScrollNotification>(
         // Start the next page well before the end, so scrolling rarely stops.

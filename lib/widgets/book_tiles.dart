@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../addons/addon_store.dart';
@@ -5,6 +6,7 @@ import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../library/library_store.dart';
 import '../screens/book_screen.dart';
+import 'adaptive.dart';
 import 'cover.dart';
 
 void openBook(BuildContext context, InstalledAddon addon, BookSummary summary) {
@@ -43,10 +45,12 @@ class BookListTile extends StatelessWidget {
       color: theme.colorScheme.onSurfaceVariant,
     );
     return InkWell(
+      borderRadius: BorderRadius.circular(12),
       onTapDown: (_) => ContentCache.book(addon, book.id),
       onTap: () => openBook(context, addon, book),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        // The list around it adds 8 more, so its highlight keeps off the window's edges.
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -193,17 +197,99 @@ class CardRow extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(
-          height: 230,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: children.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 4),
-            itemBuilder: (_, i) => children[i],
+        CardStrip(children: children),
+      ],
+    );
+  }
+}
+
+/// A horizontal list of cards. In wide windows arrows at its ends page through it, and a mouse
+/// can drag it: few mice scroll sideways, so otherwise the cards past the edge are out of reach.
+class CardStrip extends StatefulWidget {
+  const CardStrip({
+    super.key,
+    required this.children,
+    this.padding = const EdgeInsets.symmetric(horizontal: 12),
+  });
+
+  final List<Widget> children;
+  final EdgeInsets padding;
+
+  @override
+  State<CardStrip> createState() => _CardStripState();
+}
+
+class _CardStripState extends State<CardStrip> {
+  final _scroll = ScrollController();
+  bool _canBack = false;
+  bool _canForward = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  bool _onScroll(ScrollMetrics m) {
+    final back = m.pixels > m.minScrollExtent + 1;
+    final forward = m.pixels < m.maxScrollExtent - 1;
+    if (back != _canBack || forward != _canForward) {
+      setState(() {
+        _canBack = back;
+        _canForward = forward;
+      });
+    }
+    return false;
+  }
+
+  void _page(int direction) {
+    final p = _scroll.position;
+    _scroll.animateTo(
+      (p.pixels + direction * p.viewportDimension * 0.8).clamp(
+        p.minScrollExtent,
+        p.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = SizedBox(
+      height: 230,
+      child: ListView.separated(
+        controller: _scroll,
+        scrollDirection: Axis.horizontal,
+        padding: widget.padding,
+        itemCount: widget.children.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (_, i) => widget.children[i],
+      ),
+    );
+    if (!isWide(context)) return list;
+    Widget arrow(int direction) => IconButton.filledTonal(
+      tooltip: direction < 0 ? 'Back' : 'More',
+      onPressed: () => _page(direction),
+      icon: Icon(direction < 0 ? Icons.chevron_left : Icons.chevron_right),
+    );
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (n) => _onScroll(n.metrics),
+      child: NotificationListener<ScrollUpdateNotification>(
+        onNotification: (n) => _onScroll(n.metrics),
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context)
+              .copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+          child: Stack(
+            children: [
+              list,
+              // Over the covers, at their middle.
+              if (_canBack) Positioned(left: 4, top: 48, child: arrow(-1)),
+              if (_canForward) Positioned(right: 4, top: 48, child: arrow(1)),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

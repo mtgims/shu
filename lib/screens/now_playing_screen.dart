@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app.dart';
 import '../library/library_store.dart';
 import '../player/audiobook_player.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
 
@@ -18,19 +19,22 @@ class NowPlayingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = AppScope.of(context).player;
+    // Wide windows show the chapters beside the player instead of in a sheet.
+    final sidePane = MediaQuery.sizeOf(context).width >= 1000;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Close',
-          icon: const Icon(Icons.keyboard_arrow_down),
+          icon: Icon(isWide(context) ? Icons.close : Icons.keyboard_arrow_down),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Chapters',
-            icon: const Icon(Icons.format_list_numbered),
-            onPressed: () => _showChapters(context, player),
-          ),
+          if (!sidePane)
+            IconButton(
+              tooltip: 'Chapters',
+              icon: const Icon(Icons.format_list_numbered),
+              onPressed: () => _showChapters(context, player),
+            ),
         ],
       ),
       body: ValueListenableBuilder<LibraryEntry?>(
@@ -39,7 +43,7 @@ class NowPlayingScreen extends StatelessWidget {
           if (entry == null) {
             return const Center(child: Text('Nothing is playing.'));
           }
-          return SafeArea(
+          final main = SafeArea(
             child: LayoutBuilder(
               builder: (context, box) {
                 final coverSize = (box.maxHeight * 0.42).clamp(140.0, 380.0);
@@ -64,10 +68,10 @@ class NowPlayingScreen extends StatelessWidget {
                           const SizedBox(height: 12),
                           _StatusBanner(player: player),
                           // Repaints often; keep it from repainting the cover and text.
-                          RepaintBoundary(child: _SeekBar(player: player)),
-                          _Transport(player: player, entry: entry),
+                          RepaintBoundary(child: PlayerSeekBar(player: player)),
+                          PlayerTransport(player: player, entry: entry),
                           const SizedBox(height: 8),
-                          _Extras(player: player),
+                          PlayerExtras(player: player),
                         ],
                       ),
                     ),
@@ -75,6 +79,17 @@ class NowPlayingScreen extends StatelessWidget {
                 );
               },
             ),
+          );
+          if (!sidePane) return main;
+          return Row(
+            children: [
+              Expanded(child: main),
+              const VerticalDivider(width: 1),
+              SizedBox(
+                width: 380,
+                child: ChapterList(player: player, entry: entry),
+              ),
+            ],
           );
         },
       ),
@@ -91,32 +106,61 @@ class NowPlayingScreen extends StatelessWidget {
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.6,
-        builder: (context, scroll) => ListView.builder(
+        builder: (context, scroll) => ChapterList(
+          player: player,
+          entry: entry,
           controller: scroll,
-          itemCount: entry.book.chapters.length,
-          itemBuilder: (context, i) {
-            final here = i == entry.chapterIndex;
-            final primary = Theme.of(context).colorScheme.primary;
-            return ListTile(
-              leading: SizedBox(
-                width: 32,
-                child: here
-                    ? Icon(Icons.graphic_eq, color: primary)
-                    : Text('${i + 1}', textAlign: TextAlign.center),
-              ),
-              title: Text(
-                entry.book.chapters[i].title,
-                style: here
-                    ? TextStyle(color: primary, fontWeight: FontWeight.w600)
-                    : null,
-              ),
-              onTap: () {
-                Navigator.of(context).pop();
-                player.playChapter(i);
-              },
-            );
-          },
+          onPicked: () => Navigator.of(context).pop(),
         ),
+      ),
+    );
+  }
+}
+
+/// The book's chapters, the current one marked; picking one plays it.
+class ChapterList extends StatelessWidget {
+  const ChapterList({
+    super.key,
+    required this.player,
+    required this.entry,
+    this.controller,
+    this.onPicked,
+  });
+
+  final AudiobookPlayer player;
+  final LibraryEntry entry;
+  final ScrollController? controller;
+  final VoidCallback? onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return ListenableBuilder(
+      // The current chapter moves while chapters inside one file play.
+      listenable: player.current,
+      builder: (context, _) => ListView.builder(
+        controller: controller,
+        itemCount: entry.book.chapters.length,
+        itemBuilder: (context, i) {
+          final here = i == entry.chapterIndex;
+          return ListTile(
+            selected: here,
+            leading: SizedBox(
+              width: 32,
+              child: here
+                  ? Icon(Icons.graphic_eq, color: primary)
+                  : Text('${i + 1}', textAlign: TextAlign.center),
+            ),
+            title: Text(
+              entry.book.chapters[i].title,
+              style: here ? const TextStyle(fontWeight: FontWeight.w600) : null,
+            ),
+            onTap: () {
+              onPicked?.call();
+              player.playChapter(i);
+            },
+          );
+        },
       ),
     );
   }
@@ -218,15 +262,18 @@ class _StatusBanner extends StatelessWidget {
   }
 }
 
-class _SeekBar extends StatefulWidget {
-  const _SeekBar({required this.player});
+class PlayerSeekBar extends StatefulWidget {
+  const PlayerSeekBar({super.key, required this.player, this.compact = false});
   final AudiobookPlayer player;
 
+  /// One line, times beside the slider (the desktop player bar).
+  final bool compact;
+
   @override
-  State<_SeekBar> createState() => _SeekBarState();
+  State<PlayerSeekBar> createState() => _PlayerSeekBarState();
 }
 
-class _SeekBarState extends State<_SeekBar> {
+class _PlayerSeekBarState extends State<PlayerSeekBar> {
   /// Where the thumb is while dragging; null otherwise.
   double? _dragging;
 
@@ -249,29 +296,37 @@ class _SeekBarState extends State<_SeekBar> {
         final shown = Duration(milliseconds: value.round());
         final speed = widget.player.speed;
         final left = total - shown;
+        final remaining = total == Duration.zero
+            ? '--:--'
+            : '-${formatDuration(Duration(milliseconds: (left.inMilliseconds / speed).round()))}';
+        final slider = Slider(
+          value: max > 0 ? value : 0,
+          max: max > 0 ? max : 1,
+          onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
+          onChangeEnd: (v) {
+            widget.player.seek(Duration(milliseconds: v.round()));
+            setState(() => _dragging = null);
+          },
+        );
+        if (widget.compact) {
+          return Row(
+            children: [
+              Text(formatDuration(shown), style: muted),
+              Expanded(child: slider),
+              Text(remaining, style: muted),
+            ],
+          );
+        }
         return Column(
           children: [
-            Slider(
-              value: max > 0 ? value : 0,
-              max: max > 0 ? max : 1,
-              onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
-              onChangeEnd: (v) {
-                widget.player.seek(Duration(milliseconds: v.round()));
-                setState(() => _dragging = null);
-              },
-            ),
+            slider,
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
                 children: [
                   Text(formatDuration(shown), style: muted),
                   const Spacer(),
-                  Text(
-                    total == Duration.zero
-                        ? '--:--'
-                        : '-${formatDuration(Duration(milliseconds: (left.inMilliseconds / speed).round()))}',
-                    style: muted,
-                  ),
+                  Text(remaining, style: muted),
                 ],
               ),
             ),
@@ -282,26 +337,36 @@ class _SeekBarState extends State<_SeekBar> {
   }
 }
 
-class _Transport extends StatelessWidget {
-  const _Transport({required this.player, required this.entry});
+class PlayerTransport extends StatelessWidget {
+  const PlayerTransport({
+    super.key,
+    required this.player,
+    required this.entry,
+    this.compact = false,
+  });
   final AudiobookPlayer player;
   final LibraryEntry entry;
+
+  /// Smaller buttons, packed together (the desktop player bar).
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final k = compact ? 0.7 : 1.0;
     return Row(
+      mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         IconButton(
           tooltip: 'Previous chapter',
-          iconSize: 30,
+          iconSize: 30 * k,
           onPressed: player.skipToPrevious,
           icon: const Icon(Icons.skip_previous_rounded),
         ),
         IconButton(
-          tooltip: 'Back 15 seconds',
-          iconSize: 34,
+          tooltip: 'Back 15 seconds (←)',
+          iconSize: 34 * k,
           onPressed: player.rewind,
           icon: const Icon(Icons.replay),
         ),
@@ -309,12 +374,12 @@ class _Transport extends StatelessWidget {
           stream: player.playingStream,
           initialData: player.playing,
           builder: (_, snap) => IconButton.filled(
-            tooltip: snap.data == true ? 'Pause' : 'Play',
-            iconSize: 44,
+            tooltip: snap.data == true ? 'Pause (Space)' : 'Play (Space)',
+            iconSize: 44 * k,
             style: IconButton.styleFrom(
               backgroundColor: theme.colorScheme.primary,
               foregroundColor: theme.colorScheme.onPrimary,
-              minimumSize: const Size(76, 76),
+              minimumSize: Size.square(76 * k),
             ),
             onPressed: player.togglePlay,
             icon: Icon(
@@ -325,14 +390,14 @@ class _Transport extends StatelessWidget {
           ),
         ),
         IconButton(
-          tooltip: 'Forward 30 seconds',
-          iconSize: 34,
+          tooltip: 'Forward 30 seconds (→)',
+          iconSize: 34 * k,
           onPressed: player.fastForward,
           icon: const Icon(Icons.forward_30),
         ),
         IconButton(
           tooltip: 'Next chapter',
-          iconSize: 30,
+          iconSize: 30 * k,
           onPressed: entry.chapterIndex + 1 < entry.book.chapters.length
               ? player.skipToNext
               : null,
@@ -343,8 +408,8 @@ class _Transport extends StatelessWidget {
   }
 }
 
-class _Extras extends StatelessWidget {
-  const _Extras({required this.player});
+class PlayerExtras extends StatelessWidget {
+  const PlayerExtras({super.key, required this.player});
   final AudiobookPlayer player;
 
   static const speeds = [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5];
@@ -387,9 +452,8 @@ class _Extras extends StatelessWidget {
   }
 
   void _pickSpeed(BuildContext context, double current) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
+    showPanel<void>(
+      context,
       builder: (context) => SafeArea(
         child: Wrap(
           alignment: WrapAlignment.center,
@@ -418,9 +482,8 @@ class _Extras extends StatelessWidget {
       Navigator.of(context).pop();
     }
 
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
+    showPanel<void>(
+      context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,

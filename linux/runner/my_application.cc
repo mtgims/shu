@@ -53,6 +53,8 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  // Smaller than this, even the phone layout has no room.
+  gtk_widget_set_size_request(GTK_WIDGET(window), 360, 520);
 
   // The icon sits in data/ next to the executable.
   g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);

@@ -1,7 +1,7 @@
 name: audiobooks
 description: "Audiobook player with JavaScript extensions."
 publish_to: 'none'
-version: 0.4.1+8
+version: 0.4.2+9
 
 environment:
   sdk: ^3.13.3
@@ -34,3 +34,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Shown under About: what's new in this version.
+  assets:
+    - CHANGELOG.md

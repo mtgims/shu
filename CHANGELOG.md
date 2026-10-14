@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.2 - 2026-10-14
+
+### New
+- Addons → ⋮ → About Shu shows the version and what's new in it
+
+### Changed
+- On a computer Shu now works like a desktop app instead of a stretched phone app
+- A player bar along the bottom has every control (skip, seek, speed, sleep timer), also on
+  book pages, so the full-screen player is rarely needed
+- Keys: Space plays or pauses, ← and → skip back 15 s and forward 30 s, Esc or Alt+← go back,
+  Ctrl+F searches; the mouse's back button goes back too
+- Rows of books have arrows to page through them, and can be dragged with the mouse
+- Menus open as small dialogs instead of sliding up from the bottom of the window
+- Menus, dropdowns, choice dialogs and lists (Library, Search, chapters, versions) are
+  rounded: the row under the pointer lights up as a rounded shape instead of a hard rectangle
+- The full player lists the chapters beside it in wide windows
+- Lists keep a readable width, notices are small, and right-clicking a book in the Library
+  opens its menu
+- The window can no longer be made too small to use
+
 ## 0.4.1 - 2026-10-14
 
 ### New

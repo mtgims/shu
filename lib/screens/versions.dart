@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../addons/addon_store.dart';
 import '../addons/content_cache.dart';
 import '../addons/models.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/cover.dart';
 
 /// A playable version of a catalog book, found by a source extension.
@@ -63,10 +64,9 @@ Future<List<({Version version, Book? book})>> playOrder(
 /// Lets the user pick a version when none clearly is the book.
 Future<Version?> pickVersion(BuildContext context, List<Version> versions) {
   final theme = Theme.of(context);
-  return showModalBottomSheet<Version>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
+  return showPanel<Version>(
+    context,
+    scrollControlled: true,
     builder: (context) => SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../app.dart';
 import '../sources/local_library.dart';
 import '../sources/local_scan.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 
 /// Lets the user pick audiobooks on this device and adds them. On desktop a folder can be
@@ -18,9 +19,8 @@ Future<void> addBooksFromDevice(BuildContext context) async {
   final desktop = Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
   final how = desktop
-      ? await showModalBottomSheet<String>(
-          context: context,
-          showDragHandle: true,
+      ? await showPanel<String>(
+          context,
           builder: (context) => SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,

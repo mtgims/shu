@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../sources/local_library.dart';
+import '../widgets/more_menu.dart';
 
 /// The book page's menu for a book on this device: fix its details, or remove it.
 class LocalBookMenu extends StatelessWidget {
@@ -20,21 +21,13 @@ class LocalBookMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final book = AppScope.of(context).addons.local.byId(bookId);
     if (book == null) return const SizedBox.shrink();
-    return PopupMenuButton<String>(
-      tooltip: 'More',
-      onSelected: (action) => switch (action) {
-        'edit' => _edit(context, book),
-        _ => _remove(context, book),
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'edit', child: Text('Edit details')),
-        PopupMenuItem(
-          value: 'remove',
-          child: Text(
-            'Remove from Shu',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
+    return MoreMenu(
+      items: [
+        MenuItemButton(
+          onPressed: () => _edit(context, book),
+          child: const Text('Edit details'),
         ),
+        removeItem(context, 'Remove from Shu', () => _remove(context, book)),
       ],
     );
   }

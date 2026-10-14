@@ -9,6 +9,8 @@ import 'screens/library_screen.dart';
 import 'screens/search_screen.dart';
 import 'theme.dart';
 import 'updates/updater.dart';
+import 'widgets/adaptive.dart';
+import 'widgets/desktop_input.dart';
 import 'widgets/mini_player.dart';
 
 /// Gives every screen access to the app's long-lived objects.
@@ -37,6 +39,7 @@ class AppScope extends InheritedWidget {
 /// Let code outside the widget tree (startup tasks) show snack bars and dialogs.
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
 final navigatorKey = GlobalKey<NavigatorState>();
+final homeShellKey = GlobalKey<HomeShellState>();
 
 class AudiobooksApp extends StatelessWidget {
   const AudiobooksApp({
@@ -66,7 +69,16 @@ class AudiobooksApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
-        home: const HomeShell(),
+        home: HomeShell(key: homeShellKey),
+        builder: (context, child) => DesktopInput(
+          player: player,
+          navigator: navigatorKey,
+          onSearch: () {
+            navigatorKey.currentState?.popUntil((route) => route.isFirst);
+            homeShellKey.currentState?.openSearch();
+          },
+          child: child!,
+        ),
       ),
     );
   }
@@ -85,11 +97,18 @@ class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  State<HomeShell> createState() => HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class HomeShellState extends State<HomeShell> {
   int _index = 0;
+  final _searchFocus = FocusNode(debugLabel: 'Search field');
+
+  /// The Search tab with the cursor in its field (Ctrl+F).
+  void openSearch() {
+    setState(() => _index = 1);
+    _searchFocus.requestFocus();
+  }
 
   /// Saves the listening position whenever the app leaves the screen; the OS may end it there.
   late final _lifecycle = AppLifecycleListener(
@@ -105,12 +124,18 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
   late final _destinations = [
     _Destination('Home', Icons.home_outlined, Icons.home, const HomeScreen()),
-    const _Destination('Search', Icons.search, Icons.search, SearchScreen()),
+    _Destination(
+      'Search',
+      Icons.search,
+      Icons.search,
+      SearchScreen(focus: _searchFocus),
+    ),
     const _Destination(
       'Library',
       Icons.headphones_outlined,
@@ -127,7 +152,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 760;
+    final wide = isWide(context);
     final body = Column(
       children: [
         Expanded(

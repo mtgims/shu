@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../addons/addon_store.dart';
 import '../addons/models.dart';
 import '../app.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 
 /// One search catalog's results.
@@ -15,7 +16,10 @@ class _Section {
 
 /// Searches every search catalog of every installed addon at once.
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.focus});
+
+  /// The field's focus, so Ctrl+F can put the cursor there.
+  final FocusNode? focus;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -59,15 +63,20 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final hasSearchable = AppScope.of(context).addons.addons
         .any((a) => a.manifest.catalogs.any((c) => c.search));
+    final side = readableInset(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Search'),
+        titleSpacing: 16 + side,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: EdgeInsets.fromLTRB(16 + side, 0, 16 + side, 12),
             child: TextField(
               controller: _controller,
+              focusNode: widget.focus,
+              // Clicking elsewhere leaves the field, so Space and the arrows control playback.
+              onTapOutside: (_) => widget.focus?.unfocus(),
               textInputAction: TextInputAction.search,
               onSubmitted: _search,
               decoration: InputDecoration(
@@ -91,7 +100,13 @@ class _SearchScreenState extends State<SearchScreen> {
           : CustomScrollView(
               slivers: [
                 for (final section in _sections)
-                  _SectionView(key: ObjectKey(section), section: section),
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 8 + side),
+                    sliver: _SectionView(
+                      key: ObjectKey(section),
+                      section: section,
+                    ),
+                  ),
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
               ],
             ),
@@ -118,7 +133,7 @@ class _SectionView extends StatelessWidget {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
                 child: Text(
                   books != null ? '$label (${books.length})' : label,
                   style: theme.textTheme.titleSmall?.copyWith(
@@ -130,6 +145,7 @@ class _SectionView extends StatelessWidget {
             if (snap.hasError)
               SliverToBoxAdapter(
                 child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   leading: const Icon(Icons.cloud_off),
                   title: Text('${snap.error}'),
                 ),
@@ -137,13 +153,16 @@ class _SectionView extends StatelessWidget {
             else if (books == null)
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(8),
                   child: LinearProgressIndicator(),
                 ),
               )
             else if (books.isEmpty)
               const SliverToBoxAdapter(
-                child: ListTile(title: Text('Nothing found.')),
+                child: ListTile(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                  title: Text('Nothing found.'),
+                ),
               )
             else
               SliverList.builder(

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../app.dart';
 import '../library/library_store.dart';
 import '../sources/local_library.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
+import '../widgets/more_menu.dart';
 import 'add_books.dart';
 
 /// Every book the user has started, most recent first, then the books added from this device
@@ -17,7 +19,10 @@ class LibraryScreen extends StatelessWidget {
     final scope = AppScope.of(context);
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
+      appBar: AppBar(
+        title: const Text('Library'),
+        titleSpacing: 16 + readableInset(context),
+      ),
       // Tabs stay alive side by side, so their buttons must not share a hero tag.
       floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
@@ -48,26 +53,32 @@ class LibraryScreen extends StatelessWidget {
               ),
             );
           }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, 96),
-            children: [
-              for (final entry in entries) ...[
-                _EntryTile(entry: entry),
-                const SizedBox(height: 4),
-              ],
-              if (unstarted.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Text(
-                    'On this device',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.primary,
+          final side = readableInset(context);
+          // Rows keep 8 from the window's edges (their highlight is rounded), and 8 less
+          // padding inside, so their text still lines up with the title.
+          return ListTileTheme.merge(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(8 + side, 8, 8 + side, 96),
+              children: [
+                for (final entry in entries) ...[
+                  _EntryTile(entry: entry),
+                  const SizedBox(height: 4),
+                ],
+                if (unstarted.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
+                    child: Text(
+                      'On this device',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
-                ),
-                for (final book in unstarted) _LocalTile(book: book),
+                  for (final book in unstarted) _LocalTile(book: book),
+                ],
               ],
-            ],
+            ),
           );
         },
       ),
@@ -110,7 +121,6 @@ class _EntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
-    final theme = Theme.of(context);
     final addon = scope.addons.byId(entry.addonId);
     final chapters = entry.book.chapters.length;
     final where = entry.finished
@@ -118,51 +128,49 @@ class _EntryTile extends StatelessWidget {
         : chapters == 1
         ? 'At ${formatDuration(entry.position)}'
         : 'Chapter ${entry.chapterIndex + 1} of $chapters · ${formatDuration(entry.position)}';
-    return ListTile(
-      leading: BookCover(
-        title: entry.book.title,
-        url: entry.book.cover,
-        size: 56,
-        radius: 8,
+    Future<void> remove() async {
+      if (scope.player.current.value?.key == entry.key) {
+        await scope.player.stop();
+      }
+      await scope.library.remove(entry);
+    }
+
+    List<Widget> menu() => [removeItem(context, 'Remove from library', remove)];
+
+    // Right-click opens the same menu as the ⋮ button, where the pointer is.
+    return MenuAnchor(
+      menuChildren: menu(),
+      builder: (context, rightClick, child) => GestureDetector(
+        onSecondaryTapUp: (d) => rightClick.open(position: d.localPosition),
+        child: child,
       ),
-      title: Text(
-        entry.book.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(addon == null ? '$where · addon removed' : where),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: entry.progress,
-            minHeight: 3,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ],
-      ),
-      isThreeLine: true,
-      onTap: addon == null ? null : () => openEntry(context, addon, entry),
-      trailing: PopupMenuButton<String>(
-        tooltip: 'More',
-        onSelected: (action) async {
-          if (action == 'remove') {
-            if (scope.player.current.value?.key == entry.key) {
-              await scope.player.stop();
-            }
-            await scope.library.remove(entry);
-          }
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: 'remove',
-            child: Text(
-              'Remove from library',
-              style: TextStyle(color: theme.colorScheme.error),
+      child: ListTile(
+        leading: BookCover(
+          title: entry.book.title,
+          url: entry.book.cover,
+          size: 56,
+          radius: 8,
+        ),
+        title: Text(
+          entry.book.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(addon == null ? '$where · addon removed' : where),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: entry.progress,
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(2),
             ),
-          ),
-        ],
+          ],
+        ),
+        isThreeLine: true,
+        onTap: addon == null ? null : () => openEntry(context, addon, entry),
+        trailing: MoreMenu(items: menu()),
       ),
     );
   }

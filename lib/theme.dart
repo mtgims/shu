@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Warm amber on deep plum: the same palette as the addon's settings page.
@@ -55,11 +56,44 @@ ThemeData buildTheme(Brightness brightness) {
         side: BorderSide(color: scheme.outlineVariant),
       ),
     ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    // On a computer a notice across the whole window looks broken; it gets a toast's width.
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      width: _desktop ? 480 : null,
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: scheme.surfaceContainerLowest,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     ),
+    // List rows light up as rounded shapes, like the menus below, not as hard rectangles.
+    listTileTheme: ListTileThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    // Menus (⋮ menus, dropdowns): rounded, with the row under the pointer lit as a rounded
+    // shape inside them instead of a square running into their corners.
+    menuTheme: MenuThemeData(style: menuStyle),
+    dropdownMenuTheme: DropdownMenuThemeData(menuStyle: menuStyle),
+    menuButtonTheme: MenuButtonThemeData(
+      style: MenuItemButton.styleFrom(
+        minimumSize: const Size(180, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    ),
   );
 }
+
+const menuStyle = MenuStyle(
+  padding: WidgetStatePropertyAll(EdgeInsets.all(6)),
+  shape: WidgetStatePropertyAll(
+    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+  ),
+);
+
+bool get _desktop => switch (defaultTargetPlatform) {
+  TargetPlatform.linux ||
+  TargetPlatform.windows ||
+  TargetPlatform.macOS => true,
+  _ => false,
+};
