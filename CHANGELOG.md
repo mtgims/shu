@@ -7,8 +7,10 @@
 
 ### Changed
 - Extensions installed from a plain http:// address (other than this device) no longer update
-  on their own: someone on the same network could have swapped in other code. Install them
-  again from an https:// address to get updates
+  from there: someone on the same network could have swapped in other code. They update from
+  the https address the extension names instead, when it names one; otherwise install them again
+  from an https:// address. Installing again keeps an extension's settings, API keys included
+- An extension you already have says "Reinstall" in a repository, wherever it came from
 - Signing in to a server by its domain name (like books.example.org) tries https first, so the
   password isn't sent in the clear when the server has https
 - Searching Audiobookshelf asks all its libraries at once

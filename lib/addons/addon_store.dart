@@ -64,11 +64,13 @@ class InstalledAddon {
 /// An extension offered by a repository index (docs/EXTENSIONS.md).
 class RepoEntry {
   const RepoEntry({
+    this.id,
     required this.name,
     required this.url,
     this.version,
     this.description,
   });
+  final String? id;
   final String name;
   final String url;
   final String? version;
@@ -254,13 +256,18 @@ class AddonStore extends ChangeNotifier {
     String? updateUrl,
     String? etag,
   }) async {
-    final manifest = Manifest.fromExtensionJson(
-      ExtensionEngine.readManifest(code, host),
-    );
+    final json = ExtensionEngine.readManifest(code, host);
+    final manifest = Manifest.fromExtensionJson(json);
     await _dir.create(recursive: true);
     await _codeFile(manifest.id).writeAsString(code);
-    final addon = _extension(manifest, code, updateUrl);
-    if (etag != null) await _prefs.setString('ext.etag.${manifest.id}', etag);
+    final source = updateSource(updateUrl, json['updateUrl']);
+    final addon = _extension(manifest, code, source);
+    final etagKey = 'ext.etag.${manifest.id}';
+    if (source != updateUrl) {
+      await _prefs.remove(etagKey);
+    } else if (etag != null) {
+      await _prefs.setString(etagKey, etag);
+    }
     await _prefs.setString(
       'ext.checked.${manifest.id}',
       DateTime.now().toIso8601String(),
@@ -275,6 +282,7 @@ class AddonStore extends ChangeNotifier {
             in (json['extensions'] as List).whereType<Map<String, dynamic>>())
           if (e['url'] is String)
             RepoEntry(
+              id: e['id'] as String?,
               name: e['name'] as String? ?? e['id'] as String? ?? '?',
               url: index.resolve(e['url'] as String).toString(),
               version: e['version'] as String?,
@@ -448,6 +456,17 @@ bool updatesSafely(String url) {
               uri.host == '127.0.0.1' ||
               uri.host == '::1'));
 }
+
+/// Where an extension installed from [installedFrom] gets its updates. A copy from where they
+/// can't safely come (plain http on a local network) follows the address the extension gives
+/// for itself in its manifest ([declared]), so it keeps updating, and keeps its settings.
+String? updateSource(String? installedFrom, Object? declared) =>
+    installedFrom != null &&
+        !updatesSafely(installedFrom) &&
+        declared is String &&
+        updatesSafely(declared)
+    ? declared
+    : installedFrom;
 
 /// Compares dotted versions numerically ("1.10.0" > "1.9.2").
 int compareVersions(String a, String b) {

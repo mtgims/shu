@@ -28,6 +28,7 @@ extension = {
       { id: 'genres', name: 'Browse by genre', genres: ['Fantasy', 'Romance'] },
     ],
     releases: false,               // true for sources, see below
+    updateUrl: 'https://…/example.js', // optional: where copies installed over plain http update from
     settings: [                    // optional, the app draws the form
       { key: 'apiKey', label: 'API key', type: 'password', help: 'From your account page' },
       { key: 'sources', label: 'Sources', type: 'multiselect', default: ['a', 'b'],

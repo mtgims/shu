@@ -356,7 +356,10 @@ class _AddDialogState extends State<_AddDialog> {
                   ? null
                   : () => _run((store) => store.install(e.url)),
               child: Text(
-                installed.addons.any((a) => a.updateUrl == e.url)
+                // Same id: installing again replaces it and keeps its settings.
+                installed.addons.any(
+                      (a) => a.id == e.id || a.updateUrl == e.url,
+                    )
                     ? 'Reinstall'
                     : 'Install',
               ),
