@@ -9,22 +9,10 @@ import 'package:audiobooks/player/audiobook_player.dart';
 import 'package:audiobooks/sources/local_library.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'example_extensions.dart';
-
-class _TempPaths extends PathProviderPlatform {
-  _TempPaths(this.root);
-  final String root;
-
-  @override
-  Future<String?> getApplicationSupportPath() async => '$root/support';
-  @override
-  Future<String?> getApplicationCachePath() async => '$root/cache';
-  @override
-  Future<String?> getTemporaryPath() async => '$root/tmp';
-}
+import 'temp_paths.dart';
 
 /// One book whose first three chapters are marks inside one file, then a chapter of its own.
 Future<HttpServer> fakeAddon() async {
@@ -81,8 +69,7 @@ void main() {
 
   late Directory root;
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('shu-test-');
-    PathProviderPlatform.instance = _TempPaths(root.path);
+    root = useTempAppStorage();
     SharedPreferences.setMockInitialValues({});
   });
   tearDown(() => root.delete(recursive: true));

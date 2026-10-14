@@ -44,9 +44,14 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           // Catalog extensions first; sources (which find versions to play) after.
+          // Books on this device get a row only when there are some: an empty row would flash a
+          // spinner and vanish each time it scrolls into view, making the list jump.
+          final shown = addons.where(
+            (a) => !a.isLocal || local.books.isNotEmpty,
+          );
           final ordered = [
-            ...addons.where((a) => !a.manifest.releases),
-            ...addons.where((a) => a.manifest.releases),
+            ...shown.where((a) => !a.manifest.releases),
+            ...shown.where((a) => a.manifest.releases),
           ];
           // Rows with the same name (a library called "Audiobooks" on two servers) say where
           // they come from.
@@ -171,9 +176,15 @@ class _CatalogRow extends StatefulWidget {
 }
 
 /// Shows the catalog as it was last seen right away, then swaps in the fresh one.
-class _CatalogRowState extends State<_CatalogRow> {
+class _CatalogRowState extends State<_CatalogRow>
+    with AutomaticKeepAliveClientMixin {
   List<BookSummary>? _books;
   Object? _error;
+
+  /// A row that scrolled away keeps its books: rebuilt, it would load again and change height
+  /// while the user scrolls back up.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -201,6 +212,7 @@ class _CatalogRowState extends State<_CatalogRow> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final title = widget.title;
     final books = _books;
     if (books == null && _error != null) {

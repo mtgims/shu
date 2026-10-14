@@ -33,6 +33,9 @@ class SleepTimer {
   final bool endOfChapter;
 }
 
+/// Another version of the same catalog book, with its book when already loaded.
+typedef Alternative = ({InstalledAddon addon, String bookId, Book? book});
+
 /// The open book. [changed] tells listeners that something inside it moved, like the chapter.
 class CurrentEntry extends ValueNotifier<LibraryEntry?> {
   CurrentEntry() : super(null);
@@ -45,6 +48,8 @@ class CurrentEntry extends ValueNotifier<LibraryEntry?> {
 class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   AudiobookPlayer(this._library, this._addons, this._prefs) {
     _player.playbackEventStream.listen(_broadcast, onError: _onPlaybackError);
+    // just_audio 0.10 reports playback errors here, not as errors of the event stream.
+    _player.errorStream.listen((e) => _onPlaybackError(e, StackTrace.current));
     _player.playingStream.listen((playing) {
       _broadcast(_player.playbackEvent);
       // Progress is saved while playing only: an idle app wakes up for nothing.
@@ -99,8 +104,30 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   /// The link the audio player has open, so chapters in the same file only seek.
   String? _loadedUrl;
 
+  /// Completed with the error when the file being opened fails, see [_loadChapter].
+  Completer<Object>? _openFailure;
+
   /// When playback last failed and was restarted on its own (a link may have expired).
   DateTime? _recoveredAt;
+
+  /// Versions to fall back on while the open one hasn't played yet, see [openBook].
+  List<Alternative> _alternatives = const [];
+  Book? _look;
+  String? _workKey;
+  bool _started = false;
+
+  /// Failed tries at loading the next chapter of a book that was playing, see [_loadChapter].
+  int _retries = 0;
+  static const _retryDelays = [
+    Duration(seconds: 3),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+  ];
+
+  /// Shown while loading, e.g. that the version before didn't play; [_nextNote] carries it
+  /// into the next [openBook].
+  String? _loadingNote;
+  String? _nextNote;
 
   /// Smooth position updates, for the seek bar.
   Stream<Duration> get positionStream => _player.positionStream;
@@ -121,13 +148,25 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   /// Starts a book. Without a chapter it resumes where the user stopped (or from the start
   /// when the book was finished).
+  ///
+  /// For a version of a catalog book, [look] is that book and [alternatives] are other versions
+  /// to try, in order, if this one fails before it ever plays.
   Future<void> openBook(
     InstalledAddon addon,
     Book book, {
     int? chapterIndex,
     String? sourceId,
     String? workKey,
+    Book? look,
+    List<Alternative> alternatives = const [],
   }) async {
+    // Only a fallback (which sets the next note) keeps a note about the version before.
+    _loadingNote = _nextNote;
+    _nextNote = null;
+    _alternatives = alternatives;
+    _look = look;
+    _workKey = workKey;
+    _started = false;
     await _saveProgress();
     final entry = _library.entryFor(addon.id, book, workKey: workKey);
     if (chapterIndex != null && chapterIndex != entry.chapterIndex) {
@@ -283,8 +322,11 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     final token = ++_loadToken;
     _retryTimer?.cancel();
     _announce(addon, entry);
-    status.value = const PlayerStatus(PlayerPhase.loading);
-    await _player.pause();
+    status.value = PlayerStatus(PlayerPhase.loading, message: _loadingNote);
+    // Moving on to the next chapter, the player stays "playing": a pause would end the
+    // foreground service on Android, and with the screen off the system then stops the app
+    // before the next chapter's link arrives.
+    if (!play) await _player.pause();
 
     try {
       final url = await _linkFor(addon, entry, entry.chapterIndex);
@@ -300,23 +342,94 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         _announce(addon, entry, duration: _player.duration);
       } else {
         _loadedUrl = null;
-        // A stalled server or audio device must not leave the player loading forever.
-        await _player
-            .setUrl(url, initialPosition: entry.position)
-            .timeout(
-              _openTimeout,
-              onTimeout: () => throw AddonException(
-                'The audio did not start within ${_openTimeout.inSeconds} seconds.',
-              ),
-            );
+        // The audio backend reports a file it can't open as an error and never finishes
+        // loading: that error ends the wait. A stalled server or audio device must not leave
+        // the player loading forever either.
+        final failed = _openFailure = Completer<Object>();
+        try {
+          await Future.any<Object?>([
+            _player.setUrl(url, initialPosition: entry.position),
+            failed.future.then<Object?>((e) => throw e),
+          ]).timeout(
+            _openTimeout,
+            onTimeout: () => throw AddonException(
+              'The audio did not start within ${_openTimeout.inSeconds} seconds.',
+            ),
+          );
+        } finally {
+          _openFailure = null;
+        }
         _loadedUrl = url;
       }
       if (token != _loadToken) return;
       status.value = const PlayerStatus(PlayerPhase.ready);
+      // This version plays: no more falling back.
+      _started = true;
+      _retries = 0;
+      _alternatives = const [];
+      _loadingNote = null;
       if (play) unawaited(_player.play());
       unawaited(_prefetch(addon, entry, _nextFile(entry)));
     } on Object catch (e) {
       if (token != _loadToken) return;
+      if (!_started && _alternatives.isNotEmpty) {
+        unawaited(_tryNextVersion(e));
+        return;
+      }
+      // Moving on in a book that was playing: the connection may still be waking up (a phone
+      // with the screen off). Try again a few times, still "playing" so the phone keeps the app
+      // awake, each time with a fresh link.
+      if (_started && play && _retries < _retryDelays.length) {
+        final delay = _retryDelays[_retries++];
+        _links.remove(_linkKey(addon, entry, entry.chapterIndex));
+        _loadedUrl = null;
+        status.value = PlayerStatus(
+          PlayerPhase.loading,
+          message: 'Connection problem, trying again in ${delay.inSeconds} s…',
+        );
+        _retryTimer = Timer(delay, () => _loadChapter(play: play));
+        return;
+      }
+      _retries = 0;
+      _loadingNote = null;
+      unawaited(_player.pause());
+      status.value = PlayerStatus(PlayerPhase.error, message: _describe(e));
+    }
+  }
+
+  /// The version that was opened didn't start: quietly opens the next one. A version that never
+  /// played leaves nothing behind in the library.
+  Future<void> _tryNextVersion(Object failure) async {
+    final failed = current.value;
+    final next = _alternatives.first;
+    final rest = _alternatives.skip(1).toList();
+    _loadingNote =
+        'That version didn'
+        't play (${_describe(failure)}). Trying the next one…';
+    status.value = PlayerStatus(PlayerPhase.loading, message: _loadingNote);
+    if (failed != null &&
+        failed.chapterIndex == 0 &&
+        failed.position ==
+            (failed.book.chapters.first.start ?? Duration.zero)) {
+      await _library.remove(failed);
+    }
+    try {
+      var book = next.book ?? await next.addon.client.book(next.bookId);
+      final look = _look;
+      if (look != null) book = book.withLookOf(look);
+      _nextNote = _loadingNote;
+      await openBook(
+        next.addon,
+        book,
+        workKey: _workKey,
+        look: look,
+        alternatives: rest,
+      );
+    } on Object catch (e) {
+      _alternatives = rest;
+      if (rest.isNotEmpty) return _tryNextVersion(e);
+      _loadingNote = null;
+      unawaited(_player.pause());
       status.value = PlayerStatus(PlayerPhase.error, message: _describe(e));
     }
   }
@@ -440,7 +553,18 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await _library.save(entry, notify: notify);
   }
 
+  /// mpv messages that the desktop audio backend passes on as errors although playback goes on.
+  static bool _harmless(Object error) =>
+      error is PlayerException &&
+      (error.message ?? '').contains('Failed to create file cache');
+
   void _onPlaybackError(Object error, StackTrace stack) {
+    if (_harmless(error)) return;
+    final opening = _openFailure;
+    if (opening != null) {
+      if (!opening.isCompleted) opening.complete(error);
+      return;
+    }
     final entry = current.value;
     final last = _recoveredAt;
     // Links can expire while a long file plays (server logins last an hour). Once in a while,

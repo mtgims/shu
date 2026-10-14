@@ -176,9 +176,12 @@ class _StatusBanner extends StatelessWidget {
       valueListenable: player.status,
       builder: (context, status, _) {
         return switch (status.phase) {
-          PlayerPhase.loading => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Getting the audio…'),
+          PlayerPhase.loading => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              status.message ?? 'Getting the audio…',
+              textAlign: TextAlign.center,
+            ),
           ),
           PlayerPhase.downloading || PlayerPhase.error => Card(
             margin: const EdgeInsets.symmetric(vertical: 8),

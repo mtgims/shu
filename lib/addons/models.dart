@@ -201,6 +201,7 @@ class BookSummary {
     this.cover,
     this.tags = const [],
     this.details,
+    this.match,
   });
 
   final String id;
@@ -210,6 +211,10 @@ class BookSummary {
   final String? cover;
   final List<String> tags;
   final String? details;
+
+  /// For a version of a catalog book: how sure the source is that it is that book ("good",
+  /// "fair" or "poor"). Sources that don't say are taken at their word.
+  final String? match;
 
   String get byline => authors.join(', ');
 
@@ -221,6 +226,7 @@ class BookSummary {
     cover: _string(json['cover']),
     tags: _strings(json['tags']),
     details: _string(json['details']),
+    match: _string(json['match']),
   );
 
   Map<String, dynamic> toJson() => {
@@ -231,6 +237,7 @@ class BookSummary {
     'cover': cover,
     'tags': tags,
     'details': details,
+    'match': ?match,
   };
 }
 

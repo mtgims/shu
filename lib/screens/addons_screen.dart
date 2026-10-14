@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../addons/addon_store.dart';
 import '../app.dart';
 import '../sources/server.dart';
+import '../updates/update_banner.dart';
+import '../updates/updater.dart';
 import '../widgets/cover_image.dart';
 import 'connect_server.dart';
 import 'extension_settings_screen.dart';
@@ -17,7 +19,22 @@ class AddonsScreen extends StatelessWidget {
     final store = AppScope.of(context).addons;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Addons')),
+      appBar: AppBar(
+        title: const Text('Addons'),
+        actions: [
+          if (Updater.enabled)
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (_) => _checkForUpdate(context),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'update',
+                  child: Text('Check for updates'),
+                ),
+              ],
+            ),
+        ],
+      ),
       // Tabs stay alive side by side, so their buttons must not share a hero tag.
       floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
@@ -50,6 +67,26 @@ class AddonsScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Asks GitHub for a newer Shu right away, and offers it.
+Future<void> _checkForUpdate(BuildContext context) async {
+  final updater = AppScope.of(context).updater;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final update = await updater.check(force: true);
+    if (update != null) {
+      offerUpdate(updater, update);
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Shu is up to date.')),
+      );
+    }
+  } on Object catch (e) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Could not check for updates: $e')),
     );
   }
 }

@@ -1,6 +1,7 @@
 // Plays real audio through the app's player: a fake addon inside the test serves two short
-// generated WAV chapters as direct sources. Checks playback, the switch to the next chapter,
-// saved progress and the end of the book. Needs no network or account.
+// generated WAV chapters as direct sources. Checks playback, the switch to the next chapter
+// (which fails once and is tried again), saved progress and the end of the book. Needs no network
+// or account.
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,6 +19,8 @@ Future<HttpServer> fakeAddon() async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final base = 'http://127.0.0.1:${server.port}';
   final audio = toneWav(seconds: 2);
+  // The second chapter fails once, like a connection still waking up with the screen off.
+  var secondRefused = false;
   final routes = <String, Object>{
     '/manifest.json': {
       'protocol': 1,
@@ -48,7 +51,10 @@ Future<HttpServer> fakeAddon() async {
   };
   server.listen((req) async {
     final path = Uri.decodeComponent(req.uri.path);
-    if (path.startsWith('/audio/')) {
+    if (path == '/audio/b.wav' && !secondRefused) {
+      secondRefused = true;
+      req.response.statusCode = 503;
+    } else if (path.startsWith('/audio/')) {
       req.response.headers.contentType = ContentType('audio', 'wav');
       req.response.add(audio);
     } else if (routes[path] case final body?) {
@@ -105,9 +111,23 @@ void main() {
       );
       expect(player.current.value!.chapterIndex, 0);
 
+      // The player must not pause between chapters: on Android a pause ends the foreground
+      // service and its wake lock, and with the screen off the next chapter never loads.
+      var paused = false;
+      final watch = player.playingStream.listen((p) => paused |= !p);
       await until(
         () => player.current.value?.chapterIndex == 1,
         'second chapter starts',
+      );
+      await until(
+        () => player.status.value.phase == PlayerPhase.ready,
+        'second chapter ready',
+      );
+      await watch.cancel();
+      expect(
+        paused,
+        isFalse,
+        reason: 'paused while moving to the next chapter',
       );
       await until(
         () => app.library.find('test.tones', 'tones')?.finished == true,

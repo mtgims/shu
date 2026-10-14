@@ -8,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/search_screen.dart';
 import 'theme.dart';
+import 'updates/updater.dart';
 import 'widgets/mini_player.dart';
 
 /// Gives every screen access to the app's long-lived objects.
@@ -17,12 +18,14 @@ class AppScope extends InheritedWidget {
     required this.addons,
     required this.library,
     required this.player,
+    required this.updater,
     required super.child,
   });
 
   final AddonStore addons;
   final LibraryStore library;
   final AudiobookPlayer player;
+  final Updater updater;
 
   static AppScope of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!;
@@ -31,8 +34,9 @@ class AppScope extends InheritedWidget {
   bool updateShouldNotify(AppScope oldWidget) => false;
 }
 
-/// Lets code outside the widget tree (startup tasks) show snack bars.
+/// Let code outside the widget tree (startup tasks) show snack bars and dialogs.
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
+final navigatorKey = GlobalKey<NavigatorState>();
 
 class AudiobooksApp extends StatelessWidget {
   const AudiobooksApp({
@@ -40,11 +44,13 @@ class AudiobooksApp extends StatelessWidget {
     required this.addons,
     required this.library,
     required this.player,
+    required this.updater,
   });
 
   final AddonStore addons;
   final LibraryStore library;
   final AudiobookPlayer player;
+  final Updater updater;
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +58,11 @@ class AudiobooksApp extends StatelessWidget {
       addons: addons,
       library: library,
       player: player,
+      updater: updater,
       child: MaterialApp(
         title: 'Shu',
         scaffoldMessengerKey: messengerKey,
+        navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),

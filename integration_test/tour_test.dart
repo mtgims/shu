@@ -65,15 +65,17 @@ Future<void> shot(WidgetTester tester, String name) async {
   File('$shotsDir/$name.png').writeAsBytesSync(bytes!);
 }
 
+/// Taps, then lets page transitions run in real time: with live frames, `pump(duration)` draws a
+/// single frame and the next step would see a half-open page.
 Future<void> tap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
   await tester.tap(finder);
-  await tester.pump(const Duration(milliseconds: 400));
+  await settle(tester, 500);
 }
 
 Future<void> back(WidgetTester tester) async {
   await tester.pageBack();
-  await tester.pump(const Duration(milliseconds: 400));
+  await settle(tester, 500);
 }
 
 void main() {
@@ -118,6 +120,10 @@ void main() {
     await install('Example Source', 'Server');
     await waitFor(tester, find.textContaining('runs on this device'));
     await shot(tester, '02-addons');
+    // The last "Installed …" snack bar would cover the bottom of Home, where taps go next.
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .clearSnackBars();
 
     // Home: the catalog's rows and genres.
     await tap(tester, find.text('Home').last);
@@ -132,9 +138,24 @@ void main() {
     await shot(tester, '04-see-all');
     await back(tester);
 
+    // Home builds rows as they scroll into view; the genre row may be below the fold.
+    await waitFor(tester, find.text('Popular'));
+    await tester.scrollUntilVisible(
+      find.widgetWithText(ActionChip, 'Mystery'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tap(tester, find.widgetWithText(ActionChip, 'Mystery'));
+    await waitFor(tester, find.byType(CatalogScreen));
     await waitFor(tester, find.text('The Long Table'));
-    expect(find.text('The Quiet Orchard'), findsNothing);
+    // Only the genre's books; Home, still underneath while the page slides in, has others.
+    expect(
+      find.descendant(
+        of: find.byType(CatalogScreen),
+        matching: find.text('The Quiet Orchard'),
+      ),
+      findsNothing,
+    );
     await shot(tester, '05-genre');
     await back(tester);
 

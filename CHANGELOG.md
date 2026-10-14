@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 - 2026-10-14
+
+### New
+- Shu tells you when a new version is out, and on Android downloads and installs it (also under
+  Addons → Check for updates)
+- Play on a book with several versions starts one that is ready right away when it can
+- If the version that starts doesn't play, the next good one is tried on its own
+- When no version clearly matches the book, Play asks which one to play
+
+### Changed
+- Versions that clearly match the book are listed first
+
+### Fixed
+- With the screen off on Android, the next chapter sometimes didn't start; when the connection
+  isn't back yet, Shu now tries again a few times before giving up
+- Home couldn't always be scrolled back to the top
+- Playback errors went unnoticed: a stream link that expires in the middle of a book now picks
+  up again, and a file that can't be opened shows an error at once instead of after 30 seconds
+
 ## 0.3.1 - 2026-10-09
 
 ### Changed

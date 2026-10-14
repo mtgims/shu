@@ -62,8 +62,12 @@ Extensions come in two kinds, and one extension can be both:
 - A **source** finds playable versions. It sets `releases: true` in its manifest and implements
   `releases(book)`, which gets `{ title, authors, narrators, durationMinutes, year }` and returns
   matching books (with chapters) of its own, best first. The app shows them as the catalog book's
-  versions, plays the first one when the user presses Play, and keeps the catalog's title, cover
-  and credits on whatever version plays.
+  versions and keeps the catalog's title, cover and credits on whatever version plays. Each
+  version may say how sure the match is with `match`: `"good"` (clearly this book), `"fair"`
+  (probably, with a doubt) or `"poor"` (probably not). Put the reasons first in its `tags`
+  ("Same narrator", "Abridged"); the app shows them. On Play, the app starts a good version,
+  preferring one whose sources report `cached: true`, and falls back to the next good one if it
+  fails to start; when none is good, the user picks. Versions without `match` count as good.
 
 ## Host API
 

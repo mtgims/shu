@@ -9,6 +9,8 @@ import 'addons/addon_store.dart';
 import 'app.dart';
 import 'library/library_store.dart';
 import 'player/audiobook_player.dart';
+import 'updates/update_banner.dart';
+import 'updates/updater.dart';
 import 'widgets/cover_image.dart';
 
 Future<void> main() async {
@@ -24,6 +26,15 @@ Future<void> main() async {
     messengerKey.currentState?.showSnackBar(
       SnackBar(content: Text('Updated ${updated.join(', ')}')),
     );
+  });
+  // A newer Shu on the releases page: at most one small request a day.
+  Future.delayed(const Duration(seconds: 20), () async {
+    try {
+      final update = await app.updater.check();
+      if (update != null) offerUpdate(app.updater, update);
+    } on Object catch (e) {
+      debugPrint('Update check failed: $e');
+    }
   });
 }
 
@@ -59,5 +70,10 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
   // Decoded images kept in memory; covers are decoded small, so this holds plenty.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 48 << 20;
   player.restoreLastSession();
-  return AudiobooksApp(addons: addons, library: library, player: player);
+  return AudiobooksApp(
+    addons: addons,
+    library: library,
+    player: player,
+    updater: Updater(prefs),
+  );
 }

@@ -110,20 +110,63 @@ class _BookScreenState extends State<BookScreen> {
     }
     setState(() => _starting = true);
     try {
-      final best =
-          (await (_versions ?? findVersions(scope.addons, work))).firstOrNull;
-      if (best == null) {
+      final versions = await (_versions ?? findVersions(scope.addons, work));
+      if (versions.isEmpty) {
         messenger.showSnackBar(
           const SnackBar(content: Text('No versions found to play.')),
         );
         return;
       }
-      final release = await ContentCache.book(best.addon, best.release.id);
+      final good = versions.where((v) => v.isGoodMatch).toList();
+      // When no version is clearly this book, the user decides instead of a guess.
+      if (good.isEmpty) {
+        if (!mounted) return;
+        final picked = await pickVersion(context, versions);
+        if (picked == null) return;
+        final release = await ContentCache.book(
+          picked.addon,
+          picked.release.id,
+        );
+        unawaited(
+          scope.player.openBook(
+            picked.addon,
+            release.withLookOf(work),
+            workKey: _workKey,
+            look: work,
+          ),
+        );
+        await navigator.push(NowPlayingScreen.route());
+        return;
+      }
+      // The first good version that is ready at once, the others to fall back on.
+      final order = await playOrder(good);
+      if (order.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('None of the versions can be played.')),
+        );
+        return;
+      }
+      final first = order.first;
+      final release =
+          first.book ??
+          await ContentCache.book(
+            first.version.addon,
+            first.version.release.id,
+          );
       unawaited(
         scope.player.openBook(
-          best.addon,
+          first.version.addon,
           release.withLookOf(work),
           workKey: _workKey,
+          look: work,
+          alternatives: [
+            for (final o in order.skip(1))
+              (
+                addon: o.version.addon,
+                bookId: o.version.release.id,
+                book: o.book,
+              ),
+          ],
         ),
       );
       await navigator.push(NowPlayingScreen.route());
