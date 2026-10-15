@@ -107,6 +107,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+      # The packaging files come from this workflow's commit: an older tag may not have them.
+      - uses: actions/checkout@v4
+        with:
+          path: packaging
+          sparse-checkout: linux/appimage
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.4
@@ -130,9 +135,9 @@ jobs:
           ./linuxdeploy --appdir AppDir \
             --executable AppDir/usr/bin/shu \
             --library "$(ldconfig -p | grep -m1 -o '/[^ ]*libmpv.so.[12]')" \
-            --desktop-file linux/appimage/shu.desktop \
+            --desktop-file packaging/linux/appimage/shu.desktop \
             --icon-file linux/runner/resources/shu.png \
-            --custom-apprun linux/appimage/AppRun \
+            --custom-apprun packaging/linux/appimage/AppRun \
             --plugin gtk
           # media_kit opens libmpv by name from Dart, so the search path that counts is the
           # Flutter engine's own: point it at the packed libraries.
