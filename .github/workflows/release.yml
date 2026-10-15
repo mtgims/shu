@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   android:
+    if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   linux:
+    if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +81,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   windows:
+    if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
