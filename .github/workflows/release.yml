@@ -9,6 +9,12 @@ name: Release
 on:
   release:
     types: [published]
+  # Builds the AppImage again for a release made before its job existed (or after a fix to it).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build the AppImage of
+        required: true
 
 permissions:
   contents: write
@@ -86,5 +92,58 @@ jobs:
           Move-Item build\windows\x64\runner\Release Shu
           Compress-Archive -Path Shu -DestinationPath shu-windows-x64.zip
       - run: gh release upload ${{ github.event.release.tag_name }} shu-windows-x64.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # A single file that runs on most Linux distributions, with libmpv and GTK packed in.
+  appimage:
+    runs-on: ubuntu-22.04 # the oldest glibc still built on, so it runs on older systems too
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          cache: true
+      - run: >
+          sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config
+          libgtk-3-dev libmpv-dev patchelf file
+      - run: flutter build linux --release
+      - name: AppDir
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1 # no FUSE on the runners
+          DEPLOY_GTK_VERSION: 3
+        run: |
+          base=https://github.com/linuxdeploy
+          curl -fsSLo linuxdeploy "$base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -fsSLo linuxdeploy-plugin-gtk.sh "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
+          chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh
+          # Flutter's bundle stays whole: the app looks for lib/ and data/ beside itself.
+          mkdir -p AppDir/usr/bin
+          cp -r build/linux/x64/release/bundle/. AppDir/usr/bin/
+          ./linuxdeploy --appdir AppDir \
+            --executable AppDir/usr/bin/shu \
+            --library "$(ldconfig -p | grep -m1 -o '/[^ ]*libmpv.so.[12]')" \
+            --desktop-file linux/appimage/shu.desktop \
+            --icon-file linux/runner/resources/shu.png \
+            --custom-apprun linux/appimage/AppRun \
+            --plugin gtk
+          # media_kit opens libmpv by name from Dart, so the search path that counts is the
+          # Flutter engine's own: point it at the packed libraries.
+          patchelf --set-rpath '$ORIGIN:$ORIGIN/../../lib' AppDir/usr/bin/lib/libflutter_linux_gtk.so
+          # Without libmpv the AppImage would start but never play.
+          test -n "$(find AppDir/usr/lib -name 'libmpv.so*')"
+      - name: AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          ARCH: x86_64
+        run: |
+          curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool AppDir shu-linux-x86_64.AppImage
+      - run: gh release upload "$TAG" shu-linux-x86_64.AppImage --clobber
         env:
           GH_TOKEN: ${{ github.token }}

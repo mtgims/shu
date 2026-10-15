@@ -15,6 +15,7 @@
 - The sleep timer offers the time you chose last first
 - Skip silence and voice boost on Android (Now Playing → ⋮ → Playback settings)
 - Library: show all, in progress or finished books, and mark a book finished or not
+- Linux: an AppImage, a single file that runs on most distributions without installing libmpv
 
 ### Changed
 - After a pause Shu steps back a few seconds (more after a long break) so you find the thread

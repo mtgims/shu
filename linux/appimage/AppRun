@@ -1,0 +1,10 @@
+#!/bin/sh
+# Starts Shu inside the AppImage. The libraries packed with it are found through their RUNPATHs,
+# not LD_LIBRARY_PATH, so programs Shu opens (the browser) don't get them.
+HERE="$(dirname "$(readlink -f "$0")")"
+export APPDIR="${APPDIR:-$HERE}"
+# GTK's settings for the packed copy (themes, image loaders), from linuxdeploy's GTK plugin.
+for hook in "$HERE"/apprun-hooks/*.sh; do
+  [ -e "$hook" ] && . "$hook"
+done
+exec "$HERE/usr/bin/shu" "$@"

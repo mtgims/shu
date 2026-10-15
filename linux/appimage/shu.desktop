@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Shu
+Comment=Audiobook player
+Exec=shu
+Icon=shu
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=io.player.shu

@@ -11,6 +11,7 @@ server, and can be extended with small JavaScript extensions.
 
 <a href="https://github.com/mtgims/shu/releases/latest/download/shu-android-arm64-v8a.apk"><img alt="Download for Android" src="https://img.shields.io/badge/Android-APK-e8b04a?style=for-the-badge&logo=android&logoColor=white"></a>
 <a href="https://github.com/mtgims/shu/releases/latest/download/shu-linux-x64.tar.gz"><img alt="Download for Linux" src="https://img.shields.io/badge/Linux-tar.gz-e8b04a?style=for-the-badge&logo=linux&logoColor=white"></a>
+<a href="https://github.com/mtgims/shu/releases/latest/download/shu-linux-x86_64.AppImage"><img alt="Download the Linux AppImage" src="https://img.shields.io/badge/Linux-AppImage-e8b04a?style=for-the-badge&logo=linux&logoColor=white"></a>
 <a href="https://github.com/mtgims/shu/releases/latest/download/shu-windows-x64.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Windows-zip-e8b04a?style=for-the-badge&logo=windows&logoColor=white"></a>
 
 <a href="https://github.com/mtgims/shu/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mtgims/shu?style=flat&color=e8b04a&label=latest"></a>
@@ -40,7 +41,9 @@ The buttons above get the latest version; older ones are on the
 
 - **Android**: the APK works on almost every phone from the last few years. Older 32-bit phones
   need the [32-bit APK](https://github.com/mtgims/shu/releases/latest/download/shu-android-armeabi-v7a.apk) instead. Android will ask you to allow installing apps from your browser or file manager.
-- **Linux**: unpack `shu-linux-x64.tar.gz` and run `shu/shu`. It needs libmpv (`libmpv2` on
+- **Linux**: download [`shu-linux-x86_64.AppImage`](https://github.com/mtgims/shu/releases/latest/download/shu-linux-x86_64.AppImage),
+  make it executable (`chmod +x shu-linux-x86_64.AppImage`) and run it; it carries everything it
+  needs. Or unpack `shu-linux-x64.tar.gz` and run `shu/shu`, which needs libmpv (`libmpv2` on
   Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
 - **Windows**: unpack `shu-windows-x64.zip` and run `Shu\shu.exe`.
 
