@@ -80,13 +80,16 @@ class ExtensionEngine {
       switch (message) {
         case SendPort port:
           ready.complete(port);
-        case ('cache', int ask, String op, List<Object?> args):
+        case ('app', int ask, String op, List<Object?> args):
           final worker = _worker;
           unawaited(
             host
                 .run(op, args)
                 .then(
-                  (value) async => (await worker)?.send(('cache', ask, value)),
+                  (value) async =>
+                      (await worker)?.send(('app', ask, true, value)),
+                  onError: (Object e) async =>
+                      (await worker)?.send(('app', ask, false, '$e')),
                 ),
           );
         case ('done', int id, bool ok, Object? value):
@@ -146,10 +149,10 @@ class ExtensionEngine {
     final asked = <int, Completer<Object?>>{};
     var nextAsk = 0;
     final host = ExtensionHost(
-      sharedCache: (op, args) {
+      toApp: (op, args) {
         final answer = Completer<Object?>();
         asked[nextAsk] = answer;
-        reply.send(('cache', nextAsk++, op, args));
+        reply.send(('app', nextAsk++, op, args));
         return answer.future;
       },
     );
@@ -171,8 +174,11 @@ class ExtensionEngine {
                   )),
                 ),
           );
-        case ('cache', int ask, Object? value):
-          asked.remove(ask)?.complete(value);
+        case ('app', int ask, bool ok, Object? value):
+          final answer = asked.remove(ask);
+          ok
+              ? answer?.complete(value)
+              : answer?.completeError(AddonException('$value'));
         case ('settings', Map<String, Object?> value):
           engine.updateSettings(value);
         case ('stop',):

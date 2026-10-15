@@ -29,6 +29,7 @@ extension = {
     ],
     releases: false,               // true for sources, see below
     updateUrl: 'https://…/example.js', // optional: where copies installed over plain http update from
+    notice: '…',                   // optional: a warning the user must accept to install it
     settings: [                    // optional, the app draws the form
       { key: 'apiKey', label: 'API key', type: 'password', help: 'From your account page' },
       { key: 'sources', label: 'Sources', type: 'multiselect', default: ['a', 'b'],
@@ -48,7 +49,12 @@ extension = {
 `{ id, name, description?, cached?, url? , resolve? }` where `resolve` is any JSON value; the app
 passes it back to `extension.resolve()` when the user plays that source.
 
-Setting types: `text`, `password`, `toggle`, `number`, `select`, `multiselect`.
+Setting types: `text`, `password`, `toggle`, `number`, `select`, `multiselect`, `folder` (a
+folder the user picks on this device and the app can write to; empty means the default).
+
+A `notice` is shown before installing, with **I understand** and **Cancel**, and again at the
+top of the settings. Once accepted, updates install quietly while the text stays the same; an
+update that changes it waits until the user installs it by hand and accepts the new text.
 
 Every catalog without `search` is a row on Home, with **See all** opening it as a grid that
 pages with `skip` while `hasMore` is true. A catalog with `genres` shows as a row of genre
@@ -84,6 +90,16 @@ Extensions come in two kinds, and one extension can be both:
 | `await host.cache.get(key)` / `await host.cache.set(key, value, seconds)` | in-memory JSON cache that outlives the engine (cleared on app restart) |
 | `await host.sleep(ms)` | |
 | `host.log(...)` | debug output |
+| `await host.torrent.files(magnet, options?)` | `[{ index, path, size }]`, once peers have sent the torrent's description (up to 45 s) |
+| `await host.torrent.stream(magnet, index, options?)` | a link on this device that plays that file while it downloads; it stops working when the app restarts its engine, so don't keep it |
+
+`host.torrent` (Shu 0.6.0 and later; check it exists) plays torrents in the app itself, through
+TorrServer running on this device. Its `options` say how to keep what is downloaded, and the
+latest call's apply: `folder` (a path, or empty for the app's own), `deleteWhenFinished` (when
+the user finishes the book or removes it from the library), `keepDays` (null keeps them),
+`storageLimit` (bytes, 0 for none), `downloadLimit` and `uploadLimit` (bytes a second, 0 for
+none) and `shareAfter` (keep sharing while the app is open). An extension using it should carry
+a `notice`: the device connects directly to the people sharing the torrent.
 
 `fetch` options: `method`, `headers`, `query` (object), `timeout` (ms, default 15000), and one
 body: `body` (string), `json` (value), `form` (object; arrays repeat the key), or `multipart`

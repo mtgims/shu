@@ -48,6 +48,14 @@ android {
         }
     }
 
+    // The torrent engine (jniLibs/<abi>/libtorrserver.so, from tool/torrserver.sh) is a program,
+    // not a library: it must be unpacked to disk to run, which compressed packaging does.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")

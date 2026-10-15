@@ -82,6 +82,11 @@ sealed class InstallResult {
   const InstallResult();
 }
 
+/// The user declined an extension's notice: nothing was installed.
+class InstallCancelled extends AddonException {
+  InstallCancelled() : super('Not installed.');
+}
+
 class Installed extends InstallResult {
   const Installed(this.addon);
   final InstalledAddon addon;
@@ -245,7 +250,12 @@ class AddonStore extends ChangeNotifier {
 
   /// Installs whatever [input] points at: a remote addon, an extension (.js), or a repository
   /// index (returned so the user can pick). Same id as an installed one replaces it.
-  Future<InstallResult> install(String input) async {
+  /// Installs from [input]. [accept] is asked when an extension carries a notice the user has
+  /// not accepted yet; declining throws [InstallCancelled].
+  Future<InstallResult> install(
+    String input, {
+    Future<bool> Function(Manifest manifest)? accept,
+  }) async {
     final text = input.trim();
     // A file on this device (desktop): an extension or repository not published yet.
     final uri = text.startsWith('/') || RegExp(r'^[A-Za-z]:\\').hasMatch(text)
@@ -280,7 +290,12 @@ class AddonStore extends ChangeNotifier {
       );
     }
     return Installed(
-      await installExtension(body, updateUrl: uri.toString(), etag: etag),
+      await installExtension(
+        body,
+        updateUrl: uri.toString(),
+        etag: etag,
+        accept: accept,
+      ),
     );
   }
 
@@ -288,9 +303,11 @@ class AddonStore extends ChangeNotifier {
     String code, {
     String? updateUrl,
     String? etag,
+    Future<bool> Function(Manifest manifest)? accept,
   }) async {
     final json = ExtensionEngine.readManifest(code, host);
     final manifest = Manifest.fromExtensionJson(json);
+    if (!await _noticeAccepted(manifest, accept)) throw InstallCancelled();
     await _dir.create(recursive: true);
     await _codeFile(manifest.id).writeAsString(code);
     final source = updateSource(updateUrl, json['updateUrl']);
@@ -307,6 +324,21 @@ class AddonStore extends ChangeNotifier {
     );
     await _put(addon);
     return addon;
+  }
+
+  /// Whether the user accepted [manifest]'s notice, asking through [accept] when the text is
+  /// new to them. Updates install without asking only while the notice stays the same.
+  Future<bool> _noticeAccepted(
+    Manifest manifest,
+    Future<bool> Function(Manifest manifest)? accept,
+  ) async {
+    final notice = manifest.notice;
+    if (notice == null) return true;
+    final key = 'ext.notice.${manifest.id}';
+    if (_prefs.getString(key) == notice) return true;
+    if (accept == null || !await accept(manifest)) return false;
+    await _prefs.setString(key, notice);
+    return true;
   }
 
   Repository _repository(Uri index, Map<String, dynamic> json) =>
@@ -369,7 +401,13 @@ class AddonStore extends ChangeNotifier {
     if (addon.isExtension) {
       final file = _codeFile(addon.id);
       if (await file.exists()) await file.delete();
-      for (final key in ['ext.settings.', 'ext.etag.', 'ext.checked.']) {
+      // Installing it again asks for its notice again.
+      for (final key in [
+        'ext.settings.',
+        'ext.etag.',
+        'ext.checked.',
+        'ext.notice.',
+      ]) {
         await _prefs.remove('$key${addon.id}');
       }
     }

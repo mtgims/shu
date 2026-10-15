@@ -47,3 +47,6 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 .metadata
+
+# The torrent engine, downloaded by tool/torrserver.sh
+/android/app/src/main/jniLibs/*/libtorrserver.so

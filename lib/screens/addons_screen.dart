@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../addons/addon_store.dart';
+import '../addons/models.dart';
 import '../app.dart';
 import '../sources/server.dart';
 import '../updates/update_banner.dart';
@@ -336,6 +337,8 @@ class _AddDialogState extends State<_AddDialog> {
             await navigator.push(ExtensionSettingsScreen.route(addon));
           }
       }
+    } on InstallCancelled {
+      // The user declined the extension's notice.
     } on Object catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -343,7 +346,29 @@ class _AddDialogState extends State<_AddDialog> {
     }
   }
 
-  void _install() => _run((store) => store.install(_controller.text));
+  /// Shows an extension's notice; installing goes on only when the user accepts it.
+  Future<bool> _accept(Manifest manifest) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Before you install ${manifest.name}'),
+          content: SingleChildScrollView(child: Text(manifest.notice!)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('I understand'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  void _install() =>
+      _run((store) => store.install(_controller.text, accept: _accept));
 
   Widget _repoList(Repository repo) {
     final installed = AppScope.of(context).addons;
@@ -360,7 +385,8 @@ class _AddDialogState extends State<_AddDialog> {
             trailing: FilledButton.tonal(
               onPressed: _busy
                   ? null
-                  : () => _run((store) => store.install(e.url)),
+                  : () =>
+                        _run((store) => store.install(e.url, accept: _accept)),
               child: Text(
                 // Same id: installing again replaces it and keeps its settings.
                 installed.addons.any(

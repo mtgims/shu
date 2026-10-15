@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../addons/addon_store.dart';
@@ -78,6 +80,21 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          if (widget.addon.manifest.notice case final notice?)
+            Card.filled(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(notice)),
+                  ],
+                ),
+              ),
+            ),
           for (final f in fields)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -86,6 +103,26 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
         ],
       ),
     );
+  }
+
+  /// Asks for a folder and keeps it only when the app can write there.
+  Future<void> _pickFolder(SettingField f) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final folder = await FilePicker.getDirectoryPath(dialogTitle: f.label);
+    if (folder == null) return;
+    try {
+      final probe = File('$folder/.shu-write-test');
+      await probe.writeAsString('');
+      await probe.delete();
+    } on FileSystemException {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Shu can\'t save files there. Choose another folder.'),
+        ),
+      );
+      return;
+    }
+    _set(f.key, folder);
   }
 
   Widget _field(SettingField f) {
@@ -114,6 +151,30 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
             for (final o in f.options)
               DropdownMenuEntry(value: o.value, label: o.label),
           ],
+        );
+      case 'folder':
+        final path = value is String && value.isNotEmpty ? value : null;
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(f.label),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Text(path ?? 'Default (inside the app)'), ?help],
+          ),
+          trailing: Wrap(
+            spacing: 4,
+            children: [
+              if (path != null)
+                TextButton(
+                  onPressed: () => _set(f.key, ''),
+                  child: const Text('Reset'),
+                ),
+              FilledButton.tonal(
+                onPressed: () => _pickFolder(f),
+                child: const Text('Choose'),
+              ),
+            ],
+          ),
         );
       case 'multiselect':
         final selected = value is List

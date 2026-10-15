@@ -220,6 +220,12 @@ var __atb = (function () {
       set: function (key, value, seconds) { return op('cacheSet', [key, value, seconds || 600]); },
     },
     sleep: function (ms) { return op('sleep', [ms]); },
+    torrent: {
+      files: function (magnet, options) { return op('torrentFiles', [magnet, options || {}]); },
+      stream: function (magnet, index, options) {
+        return op('torrentStream', [magnet, index, options || {}]);
+      },
+    },
     log: function () {
       sendMessage('atb.log', JSON.stringify(Array.prototype.map.call(arguments, String)));
     },

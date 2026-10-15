@@ -48,6 +48,7 @@ jobs:
             grep -v '^storeFile=' <<<"$KEY_PROPERTIES"
             echo "storeFile=$RUNNER_TEMP/shu-release.jks"
           } > android/key.properties
+      - run: tool/torrserver.sh android
       - run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
       - name: Package
         run: |
@@ -72,6 +73,7 @@ jobs:
           cache: true
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev
       - run: flutter build linux --release
+      - run: tool/torrserver.sh linux build/linux/x64/release/bundle
       - name: Package
         run: |
           mv build/linux/x64/release/bundle shu
@@ -90,6 +92,8 @@ jobs:
           flutter-version: 3.47.4
           cache: true
       - run: flutter build windows --release
+      - run: tool/torrserver.sh windows build/windows/x64/runner/Release
+        shell: bash
       - name: Package
         run: |
           Move-Item build\windows\x64\runner\Release Shu
@@ -111,7 +115,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: packaging
-          sparse-checkout: linux/appimage
+          sparse-checkout: |
+            linux/appimage
+            tool/torrserver.sh
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.4
@@ -144,6 +150,8 @@ jobs:
           patchelf --set-rpath '$ORIGIN:$ORIGIN/../../lib' AppDir/usr/bin/lib/libflutter_linux_gtk.so
           # Without libmpv the AppImage would start but never play.
           test -n "$(find AppDir/usr/lib -name 'libmpv.so*')"
+          # Added after linuxdeploy, which would try to patch this self-contained program.
+          packaging/tool/torrserver.sh linux AppDir/usr/bin
       - name: AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1

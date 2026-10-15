@@ -98,6 +98,11 @@ There are two kinds of extensions:
 Shu doesn't host, index or link to any content. What you can play depends entirely on the
 extensions you choose to install.
 
+Shu can also play torrents itself, for extensions that ask for it. It does this through
+[TorrServer](https://github.com/YouROK/TorrServer) (GPL-3.0), which ships with the app and only
+runs while it is needed. Such an extension shows a warning before you install it: your device
+then connects directly to other people sharing the book, so your IP address is visible to them.
+
 ## Writing extensions
 
 See [docs/EXTENSIONS.md](docs/EXTENSIONS.md). Extensions are plain JavaScript and run on the
@@ -112,3 +117,5 @@ build Shu and run the tests.
 ## License
 
 Shu is free software under the [GNU General Public License v3.0](LICENSE) or any later version.
+The downloads include [TorrServer](https://github.com/YouROK/TorrServer), also GPL-3.0, whose
+source is on its page; `tool/torrserver.sh` names the exact release.

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'addons/addon_store.dart';
 import 'app.dart';
 import 'library/library_store.dart';
+import 'peer/torrent_engine.dart';
 import 'player/audiobook_player.dart';
 import 'player/player_settings.dart';
 import 'updates/update_banner.dart';
@@ -46,11 +47,16 @@ Future<void> main() async {
 Future<AudiobooksApp> createApp({bool systemControls = true}) async {
   // just_audio has no native Linux/Windows backend; media_kit (libmpv) provides one.
   JustAudioMediaKit.title = 'Shu';
+  // Torrents can go quiet for a while as they find people to download from.
+  JustAudioMediaKit.networkTimeout = 60;
   JustAudioMediaKit.ensureInitialized();
 
   final prefs = await SharedPreferences.getInstance();
   final addons = await AddonStore.load(prefs);
   final library = LibraryStore(prefs);
+  // Torrent extensions play through it; finished or removed books may take their download.
+  final torrents = addons.host.torrents = TorrentEngine(prefs);
+  library.addListener(() => torrents.tidy(library));
 
   final settings = PlayerSettings(prefs);
   AudiobookPlayer build() => AudiobookPlayer(library, addons, settings);

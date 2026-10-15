@@ -101,6 +101,7 @@ class Manifest {
     this.configureUrl,
     this.settings = const [],
     this.releases = false,
+    this.notice,
   });
 
   final String id;
@@ -113,6 +114,9 @@ class Manifest {
 
   /// A source: it can find playable versions of books from catalog extensions.
   final bool releases;
+
+  /// A warning the user must accept before the extension is installed.
+  final String? notice;
 
   /// Extension settings; remote addons configure themselves on their own page instead.
   final List<SettingField> settings;
@@ -141,6 +145,7 @@ class Manifest {
           .map(SettingField.fromJson)
           .toList(),
       releases: json['releases'] == true,
+      notice: _string(json['notice']),
     );
   }
 
@@ -174,6 +179,7 @@ class Manifest {
           .map(SettingField.fromJson)
           .toList(),
       releases: json['releases'] == true,
+      notice: _string(json['notice']),
     );
   }
 
@@ -187,6 +193,7 @@ class Manifest {
     'configureUrl': configureUrl,
     'catalogs': catalogs.map((c) => c.toJson()).toList(),
     if (releases) 'releases': true,
+    'notice': ?notice,
     if (settings.isNotEmpty)
       'settings': settings.map((s) => s.toJson()).toList(),
   };

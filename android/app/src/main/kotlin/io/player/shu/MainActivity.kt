@@ -18,6 +18,8 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "install" -> result.success(install(call.arguments as String))
+                    // The torrent engine ships as a library: Android only runs programs there.
+                    "nativeLibraryDir" -> result.success(applicationInfo.nativeLibraryDir)
                     else -> result.notImplemented()
                 }
             }

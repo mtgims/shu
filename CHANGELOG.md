@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 - 2026-10-15
+
+### New
+- Shu can play torrents itself, for extensions that ask for it: no account or other app
+  needed. It ships with TorrServer, which runs only while a book needs it and only answers
+  on this device
+- Extensions can carry a warning you have to accept before installing them. It is also shown
+  at the top of their settings
+- Extension settings can ask for a folder
+
+### Changed
+- The downloads are larger (by about 25 MB) because they include TorrServer
+- On Linux and Windows, a stream that goes quiet for a moment (a torrent still finding people,
+  a slow server) no longer stops playback after 5 seconds; it gets a minute
+
 ## 0.5.2 - 2026-10-15
 
 ### Changed

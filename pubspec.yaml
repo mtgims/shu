@@ -1,7 +1,7 @@
 name: audiobooks
 description: "Audiobook player with JavaScript extensions."
 publish_to: 'none'
-version: 0.5.2+13
+version: 0.6.0+14
 
 environment:
   sdk: ^3.13.3
@@ -17,7 +17,9 @@ dependencies:
   html: ^0.15.7
   http: ^1.6.0
   just_audio: ^0.10.6
-  just_audio_media_kit: ^2.1.0
+  just_audio_media_kit:
+    # A copy with a longer network timeout, see third_party/README.md.
+    path: third_party/just_audio_media_kit
   # Already in the tree through Flutter (which pins it): the quantizer for cover colours.
   material_color_utilities: any
   media_kit_libs_linux: ^1.2.1

@@ -84,6 +84,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   static const _linkLifetime = Duration(hours: 3);
   static const _retryEvery = Duration(seconds: 30);
   static const _openTimeout = Duration(seconds: 30);
+  static const _torrentOpenTimeout = Duration(seconds: 90);
 
   final LibraryStore _library;
   final AddonStore _addons;
@@ -476,20 +477,26 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         // loading: that error ends the wait. A stalled server or audio device must not leave
         // the player loading forever either.
         final failed = _openFailure = Completer<Object>();
+        // A torrent first has to find the people sharing it.
+        final wait = _addons.host.torrents?.hashOf(url) != null
+            ? _torrentOpenTimeout
+            : _openTimeout;
         try {
           await Future.any<Object?>([
             _player.setUrl(url, initialPosition: entry.position),
             failed.future.then<Object?>((e) => throw e),
           ]).timeout(
-            _openTimeout,
+            wait,
             onTimeout: () => throw AddonException(
-              'The audio did not start within ${_openTimeout.inSeconds} seconds.',
+              'The audio did not start within ${wait.inSeconds} seconds.',
             ),
           );
         } finally {
           _openFailure = null;
         }
         _loadedUrl = url;
+        // Keeps the torrent engine up while its link plays, and ties the torrent to the book.
+        _addons.host.torrents?.loaded(url, entry.key);
       }
       if (token != _loadToken) return;
       status.value = const PlayerStatus(PlayerPhase.ready);
@@ -921,6 +928,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     cancelSleepTimer();
     await _player.stop();
     _loadedUrl = null;
+    _addons.host.torrents?.loaded(null, null);
     current.value = null;
     mediaItem.add(null);
     status.value = PlayerStatus.idle;

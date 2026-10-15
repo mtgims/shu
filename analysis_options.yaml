@@ -8,3 +8,5 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Copies of other people's packages, kept as they wrote them.
+    - third_party/**

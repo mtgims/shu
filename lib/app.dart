@@ -119,7 +119,10 @@ class HomeShellState extends State<HomeShell> {
   late final _lifecycle = AppLifecycleListener(
     onHide: () => AppScope.of(context).player.saveNow(),
     onExitRequested: () async {
-      await AppScope.of(context).player.saveNow();
+      final app = AppScope.of(context);
+      await app.player.saveNow();
+      // The torrent engine is a separate process: it must not outlive the window.
+      await app.addons.host.torrents?.stop();
       return AppExitResponse.exit;
     },
   );
