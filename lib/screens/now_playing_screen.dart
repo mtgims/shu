@@ -117,6 +117,7 @@ class NowPlayingScreen extends StatelessWidget {
                       child: Hero(
                         tag: playerCoverTag,
                         transitionOnUserGestures: true,
+                        flightShuttleBuilder: smallCoverInFlight,
                         child: BookCover(
                           title: entry.book.title,
                           url: entry.book.cover,
@@ -158,7 +159,9 @@ class NowPlayingScreen extends StatelessWidget {
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.only(top: kToolbarHeight),
-              child: MarksPane(player: player, entry: entry),
+              child: _AfterOpening(
+                child: MarksPane(player: player, entry: entry),
+              ),
             ),
           ),
         ),
@@ -377,6 +380,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
     );
     return StreamBuilder<Duration>(
       stream: widget.player.positionStream,
+      initialData: widget.player.position,
       builder: (context, snap) {
         final total = widget.player.duration ?? Duration.zero;
         final position = snap.data ?? Duration.zero;
@@ -504,8 +508,78 @@ class PlayerTransport extends StatelessWidget {
   }
 }
 
+/// Builds [child] once the page has finished opening, fading it in: the first frame of the
+/// opening has enough to build already.
+class _AfterOpening extends StatefulWidget {
+  const _AfterOpening({required this.child});
+  final Widget child;
+
+  @override
+  State<_AfterOpening> createState() => _AfterOpeningState();
+}
+
+class _AfterOpeningState extends State<_AfterOpening> {
+  Animation<double>? _opening;
+  bool _open = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    final opening = route?.animation;
+    if (opening == _opening) return;
+    _opening?.removeStatusListener(_check);
+    _opening = opening;
+    opening?.addStatusListener(_check);
+    // Already open (rebuilt later, or no route animation): no waiting. A route is first built
+    // offstage, for heroes to measure, and then looks finished: that build doesn't count.
+    if (opening == null || (opening.isCompleted && route?.offstage != true)) {
+      _open = true;
+    }
+  }
+
+  void _check(AnimationStatus status) {
+    if (_open || status != AnimationStatus.completed) return;
+    if (mounted) setState(() => _open = true);
+  }
+
+  @override
+  void dispose() {
+    _opening?.removeStatusListener(_check);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedOpacity(
+    opacity: _open ? 1 : 0,
+    duration: const Duration(milliseconds: 200),
+    child: _open ? widget.child : const SizedBox.expand(),
+  );
+}
+
 /// The cover that flies from the player bar into the player and back.
 const playerCoverTag = 'player-cover';
+
+/// The flying cover is the player bar's, already decoded, scaled: decoding bigger copies on the
+/// way stalls frames and flashes the placeholder. The sharp cover takes over on landing.
+Widget smallCoverInFlight(
+  BuildContext context,
+  Animation<double> animation,
+  HeroFlightDirection direction,
+  BuildContext fromHero,
+  BuildContext toHero,
+) {
+  final bar = direction == HeroFlightDirection.push ? fromHero : toHero;
+  final cover = (bar.widget as Hero).child as BookCover;
+  return BookCover(
+    title: cover.title,
+    url: cover.url,
+    radius: 12,
+    decodeWidth: BookCover.decodeWidthFor(
+      (cover.size ?? 56) * MediaQuery.devicePixelRatioOf(context),
+    ),
+  );
+}
 
 /// Builds with the open book, again only when another book is opened (a book that plays on is
 /// the same object, with its chapter and marks changing inside).
@@ -549,6 +623,26 @@ class _OnNewBookState extends State<_OnNewBook> {
 class PlayerRoute extends PageRoute<void> {
   PlayerRoute() : super(fullscreenDialog: true);
 
+  /// While the route moves, the page is drawn once and that picture moves: redrawing the whole
+  /// player (cover, blurred background) on every frame stutters on big screens.
+  final _snapshot = SnapshotController();
+
+  @override
+  void install() {
+    super.install();
+    animation!.addStatusListener(_snapshotWhileMoving);
+  }
+
+  void _snapshotWhileMoving(AnimationStatus status) =>
+      _snapshot.allowSnapshotting = status.isAnimating && !_dragging;
+
+  @override
+  void dispose() {
+    animation?.removeStatusListener(_snapshotWhileMoving);
+    _snapshot.dispose();
+    super.dispose();
+  }
+
   @override
   Color? get barrierColor => null;
 
@@ -578,6 +672,11 @@ class PlayerRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    final moving = SnapshotWidget(
+      controller: _snapshot,
+      mode: SnapshotMode.permissive,
+      child: child,
+    );
     final curved = CurvedAnimation(
       parent: animation,
       curve: Easing.emphasizedDecelerate,
@@ -592,7 +691,7 @@ class PlayerRoute extends PageRoute<void> {
             begin: const Offset(0, 0.04),
             end: Offset.zero,
           ).animate(curved),
-          child: child,
+          child: moving,
         ),
       );
     }
@@ -606,7 +705,7 @@ class PlayerRoute extends PageRoute<void> {
         onVerticalDragUpdate: (d) => _drag(context, d.primaryDelta ?? 0),
         onVerticalDragEnd: (d) => _release(d.primaryVelocity ?? 0),
         onVerticalDragCancel: () => _release(0),
-        child: child,
+        child: moving,
       ),
     );
   }
@@ -616,6 +715,8 @@ class PlayerRoute extends PageRoute<void> {
 
   void _grab() {
     _dragging = true;
+    // The finger moves the page itself: it stays live.
+    _snapshot.allowSnapshotting = false;
     navigator?.didStartUserGesture();
   }
 

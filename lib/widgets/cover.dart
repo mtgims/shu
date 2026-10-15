@@ -10,12 +10,17 @@ class BookCover extends StatelessWidget {
     this.url,
     this.size,
     this.radius = 10,
+    this.decodeWidth,
   });
 
   final String title;
   final String? url;
   final double? size;
   final double radius;
+
+  /// Decodes at this width whatever size it is drawn at (a cover in flight between two sizes
+  /// would otherwise decode again on the way).
+  final int? decodeWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -32,35 +37,15 @@ class BookCover extends StatelessWidget {
                   builder: (context, box) {
                     final image = ResizeImage(
                       CoverImage(url!),
-                      width: _decodeWidth(
-                        box.maxWidth * MediaQuery.devicePixelRatioOf(context),
-                      ),
+                      width:
+                          decodeWidth ??
+                          decodeWidthFor(
+                            box.maxWidth *
+                                MediaQuery.devicePixelRatioOf(context),
+                          ),
                       policy: ResizeImagePolicy.fit,
                     );
-                    // Book covers are taller than wide: show them whole over a darkened, filled
-                    // copy of themselves. Square audiobook covers simply fill the square. Both
-                    // layers share one decoded image.
-                    return Image(
-                      image: image,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => fallback,
-                      frameBuilder: (_, child, frame, sync) =>
-                          sync || frame != null
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                child,
-                                const ColoredBox(color: Color(0x8C000000)),
-                                Image(
-                                  image: image,
-                                  fit: BoxFit.contain,
-                                  gaplessPlayback: true,
-                                ),
-                              ],
-                            )
-                          : fallback,
-                    );
+                    return _CoverPicture(image: image, fallback: fallback);
                   },
                 ),
         ),
@@ -70,11 +55,85 @@ class BookCover extends StatelessWidget {
 
   /// Decoding at display size saves most of a cover's memory; a few fixed sizes let covers
   /// shown at similar sizes share one decoded image.
-  static int _decodeWidth(double pixels) {
+  static int decodeWidthFor(double pixels) {
     for (final w in const [96, 192, 384, 768]) {
       if (pixels <= w) return w;
     }
     return 1024;
+  }
+}
+
+/// The decoded cover: a square one drawn once; a book cover (taller than wide) shown whole over
+/// a darkened, filled copy of itself, both from the one decoded image. [fallback] shows while it
+/// loads and when it can't. A new size keeps the old picture until it is ready.
+class _CoverPicture extends StatefulWidget {
+  const _CoverPicture({required this.image, required this.fallback});
+
+  final ImageProvider image;
+  final Widget fallback;
+
+  @override
+  State<_CoverPicture> createState() => _CoverPictureState();
+}
+
+class _CoverPictureState extends State<_CoverPicture> {
+  ImageStream? _stream;
+  ImageInfo? _info;
+  bool _failed = false;
+  late final _listener = ImageStreamListener(_shown, onError: _broken);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_CoverPicture old) {
+    super.didUpdateWidget(old);
+    if (old.image != widget.image) _resolve();
+  }
+
+  void _resolve() {
+    final stream = widget.image.resolve(createLocalImageConfiguration(context));
+    if (stream.key == _stream?.key) return;
+    _stream?.removeListener(_listener);
+    _stream = stream..addListener(_listener);
+  }
+
+  void _shown(ImageInfo info, bool _) => setState(() {
+    _info?.dispose();
+    _info = info;
+    _failed = false;
+  });
+
+  void _broken(Object error, StackTrace? stack) =>
+      setState(() => _failed = true);
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_listener);
+    _info?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _info?.image;
+    if (image == null || _failed) return widget.fallback;
+    RawImage draw(BoxFit fit) =>
+        RawImage(image: image, fit: fit, filterQuality: FilterQuality.medium);
+    if ((image.width / image.height - 1).abs() < 0.03) {
+      return draw(BoxFit.cover);
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        draw(BoxFit.cover),
+        const ColoredBox(color: Color(0x8C000000)),
+        draw(BoxFit.contain),
+      ],
+    );
   }
 }
 

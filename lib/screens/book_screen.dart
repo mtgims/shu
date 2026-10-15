@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -327,20 +328,19 @@ class _BookScreenState extends State<BookScreen> {
           )
         : Column(children: [cover, const SizedBox(height: 16), info]);
 
-    return ListenableBuilder(
-      listenable: Listenable.merge([scope.library, scope.player.current]),
-      builder: (context, _) {
-        final entry = book == null || book.isWork
-            ? null
-            : scope.library.find(widget.addon.id, book.id);
-        final isCurrent =
-            entry != null && scope.player.current.value?.key == entry.key;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 860),
+    // Only what shows the player's place follows it (each pause, chapter or bookmark); the
+    // rest is built once per load. Chapters are built as they scroll into view.
+    final moves = Listenable.merge([scope.library, scope.player.current]);
+    final chapters = book != null && !book.isWork ? book.chapters : null;
+    return LayoutBuilder(
+      builder: (context, box) {
+        // A readable column of at most 860 px, centred.
+        final side = math.max(16.0, (box.maxWidth - 860) / 2);
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.symmetric(horizontal: side),
+              sliver: SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -348,10 +348,19 @@ class _BookScreenState extends State<BookScreen> {
                     const SizedBox(height: 20),
                     if (book == null)
                       const LinearProgressIndicator()
-                    else if (book.isWork) ...[
-                      _workPlayButton(book),
-                    ] else ...[
-                      _playButton(book, entry, isCurrent),
+                    else if (book.isWork)
+                      ListenableBuilder(
+                        listenable: moves,
+                        builder: (_, _) => _workPlayButton(book),
+                      )
+                    else ...[
+                      ListenableBuilder(
+                        listenable: moves,
+                        builder: (_, _) {
+                          final (entry, isCurrent) = _place(book);
+                          return _playButton(book, entry, isCurrent);
+                        },
+                      ),
                       const SizedBox(height: 12),
                       _sourcePicker(),
                     ],
@@ -395,20 +404,44 @@ class _BookScreenState extends State<BookScreen> {
                       ),
                       _SeriesRow(addon: widget.addon, books: _series),
                     ],
-                    if (book != null && !book.isWork) ...[
+                    if (chapters != null) ...[
                       const SizedBox(height: 20),
                       Text('Chapters', style: theme.textTheme.titleMedium),
                       const SizedBox(height: 4),
-                      for (final (i, chapter) in book.chapters.indexed)
-                        _chapterTile(book, i, chapter, entry, isCurrent),
                     ],
                   ],
                 ),
               ),
             ),
+            if (chapters != null)
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: side),
+                sliver: ListenableBuilder(
+                  listenable: moves,
+                  builder: (_, _) {
+                    final (entry, isCurrent) = _place(book!);
+                    return SliverList.builder(
+                      itemCount: chapters.length,
+                      itemBuilder: (_, i) =>
+                          _chapterTile(book, i, chapters[i], entry, isCurrent),
+                    );
+                  },
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         );
       },
+    );
+  }
+
+  /// The library entry of a playable [book], and whether it is the one in the player.
+  (LibraryEntry?, bool) _place(Book book) {
+    final scope = AppScope.of(context);
+    final entry = scope.library.find(widget.addon.id, book.id);
+    return (
+      entry,
+      entry != null && scope.player.current.value?.key == entry.key,
     );
   }
 

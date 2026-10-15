@@ -9,6 +9,7 @@ import '../addons/client.dart';
 import '../addons/models.dart';
 import '../library/library_store.dart';
 import 'player_settings.dart';
+import 'position_ticks.dart';
 import 'server_sync.dart';
 import 'sleep.dart';
 
@@ -42,11 +43,15 @@ class CurrentEntry extends ValueNotifier<LibraryEntry?> {
 /// lock screen, notification and media keys drive the same object as the app's UI.
 class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   AudiobookPlayer(this._library, this._addons, this.settings) {
-    _player.playbackEventStream.listen(_broadcast, onError: _onPlaybackError);
+    _player.playbackEventStream.listen((event) {
+      _broadcast(event);
+      _changes.add(null);
+    }, onError: _onPlaybackError);
     // just_audio 0.10 reports playback errors here, not as errors of the event stream.
     _player.errorStream.listen((e) => _onPlaybackError(e, StackTrace.current));
     _player.playingStream.listen((playing) {
       _broadcast(_player.playbackEvent);
+      _changes.add(null);
       _pausedAt = playing ? null : (_pausedAt ?? now());
       // Progress is saved while playing only: an idle app wakes up for nothing.
       _saveTimer?.cancel();
@@ -152,15 +157,28 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   String? _loadingNote;
   String? _nextNote;
 
-  /// Smooth position updates, for the seek bar.
-  Stream<Duration> get positionStream => _player.positionStream;
+  /// Playback started, stopped, sought or moved on (for [PositionTicks]).
+  final _changes = StreamController<void>.broadcast(sync: true);
+
+  PositionTicks _ticks(Duration Function() every) => PositionTicks(
+    position: () => _player.position,
+    playing: () => _player.playing,
+    changes: _changes.stream,
+    every: every,
+  );
+
+  /// Smooth position updates, for the seek bar: 800 steps through the file, 5 to 60 a second.
+  late final Stream<Duration> positionStream = _ticks(() {
+    final step = (_player.duration ?? Duration.zero) ~/ 800;
+    const fastest = Duration(milliseconds: 16);
+    const slowest = Duration(milliseconds: 200);
+    return step < fastest ? fastest : (step > slowest ? slowest : step);
+  }).stream;
 
   /// One update a second: enough for small progress bars, and far fewer rebuilds.
-  late final Stream<Duration> slowPositionStream = _player.createPositionStream(
-    steps: 1,
-    minPeriod: const Duration(seconds: 1),
-    maxPeriod: const Duration(seconds: 1),
-  );
+  late final Stream<Duration> slowPositionStream = _ticks(
+    () => const Duration(seconds: 1),
+  ).stream;
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<bool> get playingStream => _player.playingStream;
   Stream<double> get speedStream => _player.speedStream;
@@ -748,7 +766,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     final entry = current.value;
     if (status.value.phase == PlayerPhase.ready) {
       final back = _rewound(_player.position, _pausedAt);
-      if (back != _player.position) await _player.seek(back);
+      if (back != _player.position) await seek(back);
       unawaited(_player.play());
     } else if (entry != null) {
       // A book put back at start (or finished): away since it was last saved.
@@ -804,9 +822,16 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await _player.seek(position);
     // The desktop backend reports the old position for a moment after seeking: wait for the new
     // one, so what is saved or bookmarked next is right.
-    await _player.positionStream
-        .firstWhere((p) => (p - position).abs() < const Duration(seconds: 1))
-        .timeout(const Duration(seconds: 1), onTimeout: () => position);
+    bool there() =>
+        (_player.position - position).abs() < const Duration(seconds: 1);
+    if (!there()) {
+      await _player.playbackEventStream
+          .firstWhere((_) => there())
+          .timeout(
+            const Duration(seconds: 1),
+            onTimeout: () => _player.playbackEvent,
+          );
+    }
     _syncChapter();
     // While paused nothing else saves it before the app may be closed.
     if (!_player.playing) await _saveProgress();
@@ -848,16 +873,23 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> setSpeed(double speed) async {
+  /// Changes the speed; [save] keeps it for next time (a slider saves once it is let go).
+  Future<void> setSpeed(double speed, {bool save = true}) async {
     await _player.setSpeed(speed);
-    settings.speed = speed;
+    if (save) settings.speed = speed;
   }
+
+  /// The Android effects as last applied, so other setting changes don't reach the player.
+  ({bool silence, bool boost})? _effects;
 
   void _applyEffects() {
     if (!PlayerSettings.hasAudioEffects) return;
-    unawaited(_player.setSkipSilenceEnabled(settings.skipSilence));
+    final want = (silence: settings.skipSilence, boost: settings.voiceBoost);
+    if (want == _effects) return;
+    _effects = want;
+    unawaited(_player.setSkipSilenceEnabled(want.silence));
     unawaited(_boost.setTargetGain(6)); // dB
-    unawaited(_boost.setEnabled(settings.voiceBoost));
+    unawaited(_boost.setEnabled(want.boost));
   }
 
   @override
@@ -951,6 +983,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   );
 
   Future<void> dispose() async {
+    unawaited(_changes.close());
     _saveTimer?.cancel();
     _chapterTimer?.cancel();
     sleepTimer.dispose();

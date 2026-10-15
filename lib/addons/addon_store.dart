@@ -144,7 +144,10 @@ class AddonStore extends ChangeNotifier {
   Future<void> _restore() async {
     final raw = _prefs.getString(_key);
     if (raw == null) return;
-    for (final item in jsonDecode(raw) as List) {
+    final items = jsonDecode(raw) as List;
+    // Extension code files are read all at once, not one after another.
+    final codes = await Future.wait([for (final item in items) _codeOf(item)]);
+    for (final (i, item) in items.indexed) {
       try {
         final json = item as Map<String, dynamic>;
         if (json['kind'] == 'server') {
@@ -159,7 +162,8 @@ class AddonStore extends ChangeNotifier {
           json['manifest'] as Map<String, dynamic>,
         );
         if (json['kind'] == 'extension') {
-          final code = await _codeFile(manifest.id).readAsString();
+          final code =
+              codes[i] ?? (throw StateError('No code for ${manifest.id}'));
           _addons.add(_extension(manifest, code, json['updateUrl'] as String?));
         } else {
           _addons.add(
@@ -172,6 +176,18 @@ class AddonStore extends ChangeNotifier {
       } on Object catch (e) {
         debugPrint('Dropping unreadable addon: $e');
       }
+    }
+  }
+
+  /// The code of a saved extension entry, or null (not an extension, or unreadable).
+  Future<String?> _codeOf(Object? item) async {
+    try {
+      final json = item as Map<String, dynamic>;
+      if (json['kind'] != 'extension') return null;
+      final manifest = json['manifest'] as Map<String, dynamic>;
+      return await _codeFile(manifest['id'] as String).readAsString();
+    } on Object {
+      return null;
     }
   }
 

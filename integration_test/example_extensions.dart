@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/painting.dart';
 
 /// A mono 16-bit WAV. Amplitude 0 by default: tests play silence, so it is never heard.
 Uint8List toneWav({
@@ -40,14 +43,17 @@ Uint8List toneWav({
   return data.buffer.asUint8List();
 }
 
-/// A catalog: rows, genres, search and book pages; its books have no files of their own.
-const _catalog = r'''
+/// A catalog: rows, genres, search and book pages, with covers; its books have no files of
+/// their own.
+String _catalog(String base) => "var base = '$base';\n$_catalogCode";
+
+const _catalogCode = r'''
 var titles = ['The Quiet Orchard', 'Salt and Iron', 'A Map of Small Hours', 'The Lantern Keeper',
   'North of the River', 'Glass Weather', 'The Long Table', 'Paper Comets', 'Winter Harbor',
   'The Clockmaker\'s Daughter', 'Field Notes', 'An Ordinary Sky'];
 var books = titles.map(function (t, i) {
   return { id: 'c:' + i, title: t, authors: ['Author ' + (i + 1)], narrators: ['Narrator ' + (i + 1)],
-    details: (6 + i) + ' h · ★ 4.' + (i % 10) };
+    details: (6 + i) + ' h · ★ 4.' + (i % 10), cover: base + '/cover/' + i + '.png' };
 });
 extension = {
   manifest: {
@@ -94,6 +100,12 @@ extension = {
     return { books: [{ id: 's:' + work.title, title: work.title + ' (MP3)', tags: ['MP3'], details: '2 files' }] };
   },
   async book(id) {
+    // A long book with a part per chapter, for the speed checks.
+    if (id === 's:big') {
+      var parts = [];
+      for (var i = 1; i <= 300; i++) parts.push({ id: 'a', title: 'Chapter ' + i });
+      return { id: id, title: 'A Very Long Book', chapters: parts };
+    }
     return { id: id, title: id.slice(2) + ' (MP3)',
       chapters: [{ id: 'a', title: 'Part 1' }, { id: 'b', title: 'Part 2' }] };
   },
@@ -109,6 +121,7 @@ Future<HttpServer> serveExampleRepository() async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final base = 'http://127.0.0.1:${server.port}';
   final audio = toneWav(seconds: 3);
+  final covers = <String, Future<Uint8List>>{};
   final index = jsonEncode({
     'name': 'Example extensions',
     'extensions': [
@@ -131,10 +144,13 @@ Future<HttpServer> serveExampleRepository() async {
     if (path.startsWith('/audio/')) {
       req.response.headers.contentType = ContentType('audio', 'wav');
       req.response.add(audio);
+    } else if (path.startsWith('/cover/')) {
+      req.response.headers.contentType = ContentType('image', 'png');
+      req.response.add(await (covers[path] ??= coverPng(path.hashCode)));
     } else if (path == '/index.json') {
       req.response.write(index);
     } else if (path == '/catalog.js') {
-      req.response.write(_catalog);
+      req.response.write(_catalog(base));
     } else if (path == '/source.js') {
       req.response.write(_source(base));
     } else {
@@ -143,4 +159,38 @@ Future<HttpServer> serveExampleRepository() async {
     await req.response.close();
   });
   return server;
+}
+
+/// A 600 px cover: a diagonal of two colours picked by [seed] with a few shapes on it, enough
+/// for real decoding work and a colour to find.
+Future<Uint8List> coverPng(int seed) async {
+  final random = Random(seed);
+  Color colour() => HSVColor.fromAHSV(
+    1,
+    random.nextDouble() * 360,
+    0.4 + random.nextDouble() * 0.5,
+    0.3 + random.nextDouble() * 0.6,
+  ).toColor();
+  const size = 600.0;
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  canvas.drawRect(
+    const Rect.fromLTWH(0, 0, size, size),
+    Paint()
+      ..shader = ui.Gradient.linear(Offset.zero, const Offset(size, size), [
+        colour(),
+        colour(),
+      ]),
+  );
+  for (var i = 0; i < 6; i++) {
+    canvas.drawCircle(
+      Offset(random.nextDouble() * size, random.nextDouble() * size),
+      20 + random.nextDouble() * 120,
+      Paint()..color = colour().withValues(alpha: 0.6),
+    );
+  }
+  final image = await recorder.endRecording().toImage(600, 600);
+  final png = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  return png!.buffer.asUint8List();
 }

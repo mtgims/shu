@@ -88,8 +88,10 @@ class PlayerExtras extends StatelessWidget {
 
   void _pickSpeed(BuildContext context) {
     // Steps of 0.05, so repeated taps never drift to 1.2499999.
-    void set(double s) =>
-        player.setSpeed((s.clamp(minSpeed, maxSpeed) * 20).round() / 20);
+    void set(double s, {bool save = true}) => player.setSpeed(
+      (s.clamp(minSpeed, maxSpeed) * 20).round() / 20,
+      save: save,
+    );
     showPanel<void>(
       context,
       builder: (context) => SafeArea(
@@ -136,7 +138,9 @@ class PlayerExtras extends StatelessWidget {
                     max: maxSpeed,
                     divisions: ((maxSpeed - minSpeed) * 20).round(),
                     label: speedLabel(speed),
-                    onChanged: set,
+                    // Saved once, when let go: not on every step of the drag.
+                    onChanged: (s) => set(s, save: false),
+                    onChangeEnd: set,
                   ),
                   Wrap(
                     alignment: WrapAlignment.center,

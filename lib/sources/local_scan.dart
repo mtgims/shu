@@ -244,9 +244,11 @@ String? _cover(String folder, String firstFile, String coverDir) {
   }
 }
 
+final _chunks = RegExp(r'\d+|\D+');
+
 /// Orders "Part 2" before "Part 10".
 int _naturalCompare(String a, String b) {
-  final chunks = RegExp(r'\d+|\D+');
+  final chunks = _chunks;
   final x = chunks.allMatches(a.toLowerCase()).map((m) => m[0]!).toList();
   final y = chunks.allMatches(b.toLowerCase()).map((m) => m[0]!).toList();
   for (var i = 0; i < x.length && i < y.length; i++) {

@@ -74,9 +74,17 @@ class LibraryEntry {
         .toDouble();
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() => {'book': book.toJson(), ..._place()};
+
+  /// [toJson] as text. The book never changes, so it is encoded once: saving, which happens on
+  /// every pause and chapter, then costs little more than the place in it.
+  String encode() => '{"book":$_bookJson,${jsonEncode(_place()).substring(1)}';
+
+  late final String _bookJson = jsonEncode(book.toJson());
+
+  /// Everything but the book.
+  Map<String, dynamic> _place() => {
     'addonId': addonId,
-    'book': book.toJson(),
     'chapterIndex': chapterIndex,
     'positionMs': position.inMilliseconds,
     'sourceId': sourceId,
@@ -178,9 +186,12 @@ class LibraryStore extends ChangeNotifier {
   final SharedPreferences _prefs;
   final Map<String, LibraryEntry> _entries = {};
 
-  List<LibraryEntry> get entries =>
-      _entries.values.toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  /// Newest first; sorted again only after a change.
+  List<LibraryEntry> get entries => _sorted ??= List.unmodifiable(
+    _entries.values.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+  );
+  List<LibraryEntry>? _sorted;
 
   LibraryEntry? find(String addonId, String bookId) =>
       _entries[LibraryEntry.keyOf(addonId, bookId)];
@@ -201,6 +212,7 @@ class LibraryStore extends ChangeNotifier {
       history: old?.history.where((m) => m.fits(book)).toList(),
     );
     _entries[key] = entry;
+    _sorted = null;
     return entry;
   }
 
@@ -216,19 +228,20 @@ class LibraryStore extends ChangeNotifier {
   Future<void> save(LibraryEntry entry, {bool notify = true}) async {
     entry.updatedAt = DateTime.now();
     _entries[entry.key] = entry;
-    await _prefs.setString(
-      _key,
-      jsonEncode(_entries.values.map((e) => e.toJson()).toList()),
-    );
+    _sorted = null;
+    await _write();
     if (notify) notifyListeners();
   }
 
   Future<void> remove(LibraryEntry entry) async {
     _entries.remove(entry.key);
-    await _prefs.setString(
-      _key,
-      jsonEncode(_entries.values.map((e) => e.toJson()).toList()),
-    );
+    _sorted = null;
+    await _write();
     notifyListeners();
   }
+
+  Future<void> _write() => _prefs.setString(
+    _key,
+    '[${_entries.values.map((e) => e.encode()).join(',')}]',
+  );
 }

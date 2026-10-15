@@ -247,16 +247,19 @@ class JellyfinBackend extends ServerBackend {
       'Fields': 'ParentId',
     });
     final files = hits.where((h) => h['Type'] == 'AudioBook').toList();
-    // A folder matching by name is a book when audio files are right inside it.
-    for (final folder in hits.where((h) => h['Type'] == 'Folder').take(8)) {
-      files.addAll(
-        await _items({
+    // A folder matching by name is a book when audio files are right inside it. The folders
+    // are asked at the same time, not one after another.
+    final inFolders = await Future.wait([
+      for (final folder in hits.where((h) => h['Type'] == 'Folder').take(8))
+        _items({
           'ParentId': folder['Id'] as String,
           'IncludeItemTypes': 'AudioBook',
           'Limit': '$_batch',
           'Fields': 'ParentId',
         }),
-      );
+    ]);
+    for (final list in inFolders) {
+      files.addAll(list);
     }
     return _summaries(_group(files).values.toList());
   }

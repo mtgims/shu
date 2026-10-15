@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.1 - 2026-10-15
+
+### Changed
+- Book pages with many chapters open at once and stay smooth while a book plays: chapters are
+  built as they scroll into view, and only the parts showing where you are follow playback
+- Home no longer redraws every row each time progress is saved
+- Covers are drawn in one pass, and a cover wanted at two sizes is fetched once
+- Saving progress does less work: each book's chapter list is turned into text once, not on
+  every save
+- Seek bars and progress lines stop ticking while the app is in the background, and hidden tabs
+  stop their animations
+- Dragging the speed slider saves the speed once, when you let go
+- Jellyfin searches ask for matching folders all at once
+
+### Fixed
+- The player no longer leaves a timer running each time it is opened or a seek is made (it
+  added up over a long session, also with the screen off)
+- Opening the player on a computer no longer stutters: the page moves as one picture while it
+  opens, the flying cover doesn't reload on the way, and the chapter list beside the player
+  comes in once it has opened
+
 ## 0.5.0 - 2026-10-15
 
 ### New

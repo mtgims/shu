@@ -35,10 +35,9 @@ class PlayerSettings extends ChangeNotifier {
   set shakeToExtend(bool on) => _setBool('shakeToExtend', on);
 
   double get speed => _prefs.getDouble('speed') ?? 1.0;
-  set speed(double value) {
-    _prefs.setDouble('speed', value);
-    notifyListeners();
-  }
+
+  /// Read when the player starts; the player reports changes itself (no notification).
+  set speed(double value) => _prefs.setDouble('speed', value);
 
   /// The sleep timer chosen last: minutes, or 0 for the end of the chapter.
   int? get lastSleep => _prefs.getInt('lastSleep');

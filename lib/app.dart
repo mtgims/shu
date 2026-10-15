@@ -106,9 +106,11 @@ class HomeShellState extends State<HomeShell> {
   int _index = 0;
   final _searchFocus = FocusNode(debugLabel: 'Search field');
 
+  void _select(int index) => setState(() => _index = index);
+
   /// The Search tab with the cursor in its field (Ctrl+F).
   void openSearch() {
-    setState(() => _index = 1);
+    _select(1);
     _searchFocus.requestFocus();
   }
 
@@ -165,7 +167,12 @@ class HomeShellState extends State<HomeShell> {
         Expanded(
           child: IndexedStack(
             index: _index,
-            children: [for (final d in _destinations) d.page],
+            children: [
+              for (final (i, d) in _destinations.indexed)
+                // Hidden tabs keep their state but not their animations: a spinner on a hidden
+                // tab would keep the app drawing frames.
+                TickerMode(enabled: i == _index, child: d.page),
+            ],
           ),
         ),
         const MiniPlayer(),
@@ -179,7 +186,7 @@ class HomeShellState extends State<HomeShell> {
           children: [
             NavigationRail(
               selectedIndex: _index,
-              onDestinationSelected: (i) => setState(() => _index = i),
+              onDestinationSelected: _select,
               labelType: NavigationRailLabelType.all,
               destinations: [
                 for (final d in _destinations)
@@ -200,7 +207,7 @@ class HomeShellState extends State<HomeShell> {
         body: body,
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          onDestinationSelected: _select,
           destinations: [
             for (final d in _destinations)
               NavigationDestination(
@@ -216,7 +223,7 @@ class HomeShellState extends State<HomeShell> {
     return PopScope(
       canPop: _index == 0,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) setState(() => _index = 0);
+        if (!didPop) _select(0);
       },
       child: scaffold,
     );

@@ -45,33 +45,46 @@ class CoverImage extends ImageProvider<CoverImage> {
   ImageStreamCompleter loadImage(CoverImage key, ImageDecoderCallback decode) =>
       MultiFrameImageStreamCompleter(codec: _load(decode), scale: 1);
 
-  Future<ui.Codec> _load(ImageDecoderCallback decode) async {
+  Future<ui.Codec> _load(ImageDecoderCallback decode) async =>
+      decode(await ui.ImmutableBuffer.fromUint8List(await _bytes(url)));
+
+  /// Covers being read or downloaded: the same cover wanted at two sizes at once (a row and
+  /// the player) is fetched once.
+  static final _loading = <String, Future<Uint8List>>{};
+
+  static Future<Uint8List> _bytes(String url) =>
+      _loading[url] ??= _read(url).whenComplete(() {
+        // Not `=> remove(url)`: that returns this very future, and it would wait on itself.
+        _loading.remove(url);
+      });
+
+  static Future<Uint8List> _read(String url) async {
     // Covers of books on this device are read where they are.
-    final local = url.startsWith('file:')
-        ? File(Uri.parse(url).toFilePath())
-        : null;
-    final file = local ?? File('${(await _cacheDir()).path}/${_fileName(url)}');
-    Uint8List bytes;
-    if (local != null || await file.exists()) {
-      bytes = await file.readAsBytes();
-    } else {
-      final res = await _http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 20));
-      if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
-        throw StateError('Cover download failed (HTTP ${res.statusCode})');
-      }
-      bytes = res.bodyBytes;
-      // Written aside, then renamed: a write cut short must not become the cover for good.
-      final tmp = File('${file.path}.tmp');
-      unawaited(
-        tmp
-            .writeAsBytes(bytes, flush: true)
-            .then((t) => t.rename(file.path))
-            .catchError((_) => file),
-      );
+    if (url.startsWith('file:')) {
+      return File(Uri.parse(url).toFilePath()).readAsBytes();
     }
-    return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
+    final file = File('${(await _cacheDir()).path}/${_fileName(url)}');
+    try {
+      return await file.readAsBytes();
+    } on FileSystemException {
+      // Not cached yet.
+    }
+    final res = await _http
+        .get(Uri.parse(url))
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
+      throw StateError('Cover download failed (HTTP ${res.statusCode})');
+    }
+    final bytes = res.bodyBytes;
+    // Written aside, then renamed: a write cut short must not become the cover for good.
+    final tmp = File('${file.path}.tmp');
+    unawaited(
+      tmp
+          .writeAsBytes(bytes, flush: true)
+          .then((t) => t.rename(file.path))
+          .catchError((_) => file),
+    );
+    return bytes;
   }
 
   /// Deletes the least recently written covers until the cache fits [maxCacheBytes].

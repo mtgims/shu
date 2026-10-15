@@ -27,17 +27,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Shu')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([
-          scope.addons,
-          scope.library,
-          scope.addons.local,
-        ]),
+        // Progress (saved on every pause and chapter) only changes "Continue listening", which
+        // follows the library itself; the rows are rebuilt when addons or local books change.
+        listenable: Listenable.merge([scope.addons, scope.addons.local]),
         builder: (context, _) {
           final addons = scope.addons.addons;
-          final inProgress = scope.library.entries
-              .where((e) => !e.finished)
-              .take(12)
-              .toList();
           final local = scope.addons.local;
           if (local.books.isEmpty && addons.every((a) => a.isLocal)) {
             return const _Welcome();
@@ -64,8 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
           String titleOf(InstalledAddon a, CatalogInfo c) =>
               names[c.name]! > 1 ? '${c.name} · ${a.manifest.name}' : c.name;
           final rows = <Widget Function()>[
-            if (inProgress.isNotEmpty)
-              () => _continueListening(context, inProgress),
+            () => const _ContinueListening(),
             for (final addon in ordered)
               for (final catalog in addon.manifest.catalogs.where(
                 (c) => !c.search,
@@ -96,8 +89,30 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _continueListening(BuildContext context, List<LibraryEntry> entries) {
+/// The books in progress, newest first; nothing when there are none.
+class _ContinueListening extends StatelessWidget {
+  const _ContinueListening();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
+    return ListenableBuilder(
+      listenable: scope.library,
+      builder: (context, _) {
+        final entries = scope.library.entries
+            .where((e) => !e.finished)
+            .take(12)
+            .toList();
+        return entries.isEmpty
+            ? const SizedBox.shrink()
+            : _row(context, entries);
+      },
+    );
+  }
+
+  Widget _row(BuildContext context, List<LibraryEntry> entries) {
     final scope = AppScope.of(context);
     return CardRow(
       title: 'Continue listening',

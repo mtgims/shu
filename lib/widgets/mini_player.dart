@@ -98,6 +98,7 @@ class _ProgressLine extends StatelessWidget {
     return RepaintBoundary(
       child: StreamBuilder<Duration>(
         stream: player.slowPositionStream,
+        initialData: player.position,
         builder: (context, snap) {
           final total = player.duration?.inMilliseconds ?? 0;
           final value = total > 0

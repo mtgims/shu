@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:audiobooks/addons/models.dart';
 import 'package:audiobooks/library/library_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -148,5 +150,40 @@ void main() {
           .history,
       isEmpty,
     );
+  });
+
+  test('saving splices the encoded book in: same data as toJson', () {
+    final entry = LibraryEntry(addonId: 'a', book: book, workKey: 'w|1')
+      ..chapterIndex = 1
+      ..position = const Duration(seconds: 42);
+    entry.bookmarks.add(entry.here(note: 'Here "quoted"'));
+    expect(jsonDecode(entry.encode()), jsonDecode(jsonEncode(entry.toJson())));
+    // Encoded again after a change, the place follows (the book is reused).
+    entry.position = const Duration(seconds: 50);
+    expect((jsonDecode(entry.encode()) as Map)['positionMs'], 50000);
+  });
+
+  test('the newest first, also right after a save', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs);
+    final first = store.entryFor('addon', book);
+    await store.save(first);
+    final second = store.entryFor(
+      'addon',
+      const Book(
+        id: 'b2',
+        title: 'Two',
+        chapters: [Chapter(id: '0', title: 'x')],
+      ),
+    );
+    await store.save(second);
+    expect(store.entries.map((e) => e.book.id), ['b2', 'b1']);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await store.save(first);
+    expect(store.entries.map((e) => e.book.id), ['b1', 'b2']);
+    expect(LibraryStore(prefs).entries.map((e) => e.book.id), [
+      'b1',
+      'b2',
+    ], reason: 'what was written reads back');
   });
 }
