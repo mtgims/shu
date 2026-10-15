@@ -23,11 +23,13 @@ server, and can be extended with small JavaScript extensions.
 ## What it does
 
 - Your own audiobooks: MP3, M4B, M4A, FLAC, Ogg and more, with chapters read from M4B files
-- Audiobookshelf and Jellyfin servers: browse, search and stream your libraries
+- Audiobookshelf and Jellyfin servers: browse, search and stream your libraries, with your
+  progress kept in step with the server
 - Browse and search across all of them at once
 - A library that remembers where you stopped in every book
-- Chapters, playback speed, a sleep timer, 15/30 second skips
-- Background playback with lock screen controls on Android, media keys on Linux
+- Chapters, bookmarks, speed from 0.5× to 3×, 15/30 second skips, and a step back after a pause
+- A sleep timer that fades out, with +5 minutes from the notification or a shake
+- Background playback with lock screen controls and Android Auto on Android, media keys on Linux
 
 macOS and iOS builds are set up but haven't been tested yet.
 

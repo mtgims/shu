@@ -7,6 +7,9 @@ import '../addons/backend.dart';
 import '../addons/models.dart';
 import 'audiobookshelf.dart';
 import 'jellyfin.dart';
+import 'progress.dart';
+
+export 'progress.dart';
 
 enum ServerKind {
   audiobookshelf('Audiobookshelf', 13378),
@@ -38,6 +41,13 @@ abstract class ServerBackend implements AddonBackend {
   Future<void> refreshLibraries();
 
   Map<String, Object?> toJson();
+
+  /// Where the user is in [book] by the server's record, or null when they never played it
+  /// there. Fails when the server can't be asked.
+  Future<RemoteProgress?> progress(Book book);
+
+  /// Records on the server where the user is in [book], so its other apps carry on from there.
+  Future<void> report(Book book, BookPlace place, {required bool finished});
 
   static ServerBackend fromJson(Map<String, dynamic> json) =>
       switch (json['kind']) {

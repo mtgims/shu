@@ -16,7 +16,11 @@ class LibraryEntry {
     this.finished = false,
     this.workKey,
     DateTime? updatedAt,
-  }) : updatedAt = updatedAt ?? DateTime.now();
+    List<Mark>? bookmarks,
+    List<Mark>? history,
+  }) : updatedAt = updatedAt ?? DateTime.now(),
+       bookmarks = bookmarks ?? [],
+       history = history ?? [];
 
   final String addonId;
   final Book book;
@@ -30,6 +34,27 @@ class LibraryEntry {
 
   /// The catalog book this is a version of (`addonId|bookId`), if it was started from one.
   String? workKey;
+
+  /// Places the user marked, in the order they were added.
+  final List<Mark> bookmarks;
+
+  /// Where the user was before their last jumps (picking a chapter, dragging far), newest first.
+  final List<Mark> history;
+  static const historyLength = 10;
+
+  /// Adds [mark] to the front of the history, dropping the oldest beyond [historyLength].
+  void remember(Mark mark) {
+    history.insert(0, mark);
+    if (history.length > historyLength) history.removeLast();
+  }
+
+  /// Where the user is now, as a mark.
+  Mark here({String? note}) => Mark(
+    chapterIndex: chapterIndex,
+    position: position,
+    note: note,
+    createdAt: DateTime.now(),
+  );
 
   String get key => keyOf(addonId, book.id);
   static String keyOf(String addonId, String bookId) => '$addonId|$bookId';
@@ -58,6 +83,9 @@ class LibraryEntry {
     'finished': finished,
     'workKey': ?workKey,
     'updatedAt': updatedAt.toIso8601String(),
+    if (bookmarks.isNotEmpty)
+      'bookmarks': [for (final m in bookmarks) m.toJson()],
+    if (history.isNotEmpty) 'history': [for (final m in history) m.toJson()],
   };
 
   static LibraryEntry fromJson(Map<String, dynamic> json) {
@@ -76,8 +104,59 @@ class LibraryEntry {
       finished: json['finished'] == true,
       workKey: json['workKey'] as String?,
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      bookmarks: Mark.listFrom(json['bookmarks'], book),
+      history: Mark.listFrom(json['history'], book),
     );
   }
+}
+
+/// A place in a book: a bookmark, or where the user was before a jump.
+class Mark {
+  const Mark({
+    required this.chapterIndex,
+    required this.position,
+    required this.createdAt,
+    this.note,
+  });
+
+  final int chapterIndex;
+
+  /// In the chapter's audio file, like [LibraryEntry.position].
+  final Duration position;
+  final DateTime createdAt;
+  final String? note;
+
+  Mark withNote(String? note) => Mark(
+    chapterIndex: chapterIndex,
+    position: position,
+    createdAt: createdAt,
+    note: note == null || note.trim().isEmpty ? null : note.trim(),
+  );
+
+  /// Whether the book (maybe reloaded with other chapters) still has this place.
+  bool fits(Book book) => chapterIndex < book.chapters.length;
+
+  Map<String, dynamic> toJson() => {
+    'chapter': chapterIndex,
+    'positionMs': position.inMilliseconds,
+    'at': createdAt.toIso8601String(),
+    'note': ?note,
+  };
+
+  /// The marks in [json] that [book] still has; anything unreadable is left out.
+  static List<Mark> listFrom(Object? json, Book book) => [
+    if (json is List)
+      for (final m in json.whereType<Map<String, dynamic>>())
+        if (m['chapter'] case final int chapter)
+          if (m['positionMs'] case final int ms)
+            Mark(
+              chapterIndex: chapter,
+              position: Duration(milliseconds: ms),
+              createdAt:
+                  DateTime.tryParse(m['at'] as String? ?? '') ?? DateTime.now(),
+              note: m['note'] as String?,
+            ),
+  ].where((m) => m.fits(book)).toList();
 }
 
 /// Books in progress, most recent first, kept in shared preferences.
@@ -118,6 +197,8 @@ class LibraryStore extends ChangeNotifier {
       sourceId: old?.sourceId,
       finished: old?.finished ?? false,
       workKey: workKey ?? old?.workKey,
+      bookmarks: old?.bookmarks.where((m) => m.fits(book)).toList(),
+      history: old?.history.where((m) => m.fits(book)).toList(),
     );
     _entries[key] = entry;
     return entry;

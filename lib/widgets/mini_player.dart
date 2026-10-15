@@ -33,11 +33,15 @@ class MiniPlayer extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
                   child: Row(
                     children: [
-                      BookCover(
-                        title: entry.book.title,
-                        url: entry.book.cover,
-                        size: 44,
-                        radius: 6,
+                      Hero(
+                        tag: playerCoverTag,
+                        transitionOnUserGestures: true,
+                        child: BookCover(
+                          title: entry.book.title,
+                          url: entry.book.cover,
+                          size: 44,
+                          radius: 6,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -173,11 +177,15 @@ class _PlayerBar extends StatelessWidget {
                         padding: const EdgeInsets.all(4),
                         child: Row(
                           children: [
-                            BookCover(
-                              title: entry.book.title,
-                              url: entry.book.cover,
-                              size: 56,
-                              radius: 6,
+                            Hero(
+                              tag: playerCoverTag,
+                              transitionOnUserGestures: true,
+                              child: BookCover(
+                                title: entry.book.title,
+                                url: entry.book.cover,
+                                size: 56,
+                                radius: 6,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(

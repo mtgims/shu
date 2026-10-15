@@ -139,24 +139,34 @@ class AudiobookshelfBackend extends ServerBackend {
         expiry.difference(DateTime.now()) < const Duration(minutes: 2);
   }
 
+  /// A request with the access token, renewed first when it is about to expire or was refused.
+  Future<Object?> _call(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+  }) async {
+    if (_expiring) await _renew();
+    Future<Object?> call() => _http.json(
+      method,
+      path,
+      query: query,
+      body: body,
+      headers: {'authorization': 'Bearer $_access'},
+    );
+    try {
+      return await call();
+    } on SignedOut {
+      await _renew();
+      return call();
+    }
+  }
+
   Future<Map<String, dynamic>> _get(
     String path, [
     Map<String, String>? query,
   ]) async {
-    if (_expiring) await _renew();
-    Future<Object?> get() => _http.json(
-      'GET',
-      path,
-      query: query,
-      headers: {'authorization': 'Bearer $_access'},
-    );
-    Object? json;
-    try {
-      json = await get();
-    } on SignedOut {
-      await _renew();
-      json = await get();
-    }
+    final json = await _call('GET', path, query: query);
     if (json is! Map<String, dynamic>) {
       throw AddonException('Audiobookshelf sent an unreadable reply.');
     }
@@ -317,6 +327,40 @@ class AudiobookshelfBackend extends ServerBackend {
         'token': _access,
       }).toString(),
       validFor: left == null ? null : left - const Duration(minutes: 1),
+    );
+  }
+
+  /// A book never played on the server answers 404, which fails like any other error.
+  @override
+  Future<RemoteProgress?> progress(Book book) async {
+    final json = await _get('/api/me/progress/${book.id}');
+    final seconds = json['currentTime'];
+    final updated = json['lastUpdate'];
+    if (seconds is! num || updated is! num) return null;
+    return (
+      place: placeAt(book, Duration(milliseconds: (seconds * 1000).round())),
+      finished: json['isFinished'] == true,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(updated.toInt()),
+    );
+  }
+
+  @override
+  Future<void> report(
+    Book book,
+    BookPlace place, {
+    required bool finished,
+  }) async {
+    final at = bookTime(book, place).inMilliseconds / 1000;
+    final length = bookLength(book).inMilliseconds / 1000;
+    await _call(
+      'PATCH',
+      '/api/me/progress/${book.id}',
+      body: {
+        'currentTime': at,
+        'duration': length,
+        'progress': finished ? 1 : (length > 0 ? (at / length).clamp(0, 1) : 0),
+        'isFinished': finished,
+      },
     );
   }
 

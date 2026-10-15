@@ -11,8 +11,17 @@ import 'add_books.dart';
 
 /// Every book the user has started, most recent first, then the books added from this device
 /// that haven't been started yet.
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+enum _Show { all, listening, finished }
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  var _show = _Show.all;
 
   @override
   Widget build(BuildContext context) {
@@ -33,12 +42,23 @@ class LibraryScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: Listenable.merge([scope.library, scope.addons.local]),
         builder: (context, _) {
-          final entries = scope.library.entries;
+          final all = scope.library.entries;
+          final entries = switch (_show) {
+            _Show.all => all,
+            _Show.listening => [
+              for (final e in all)
+                if (!e.finished) e,
+            ],
+            _Show.finished => [
+              for (final e in all)
+                if (e.finished) e,
+            ],
+          };
           final unstarted = [
             for (final b in scope.addons.local.books)
               if (scope.library.find(LocalBackend.id, b.id) == null) b,
           ];
-          if (entries.isEmpty && unstarted.isEmpty) {
+          if (all.isEmpty && unstarted.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -61,11 +81,19 @@ class LibraryScreen extends StatelessWidget {
             child: ListView(
               padding: EdgeInsets.fromLTRB(8 + side, 8, 8 + side, 96),
               children: [
+                // Filters only help once there is something to sort through.
+                if (all.length >= 4) ...[
+                  _Filters(
+                    show: _show,
+                    onChanged: (s) => setState(() => _show = s),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 for (final entry in entries) ...[
                   _EntryTile(entry: entry),
                   const SizedBox(height: 4),
                 ],
-                if (unstarted.isNotEmpty) ...[
+                if (unstarted.isNotEmpty && _show != _Show.finished) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
                     child: Text(
@@ -84,6 +112,33 @@ class LibraryScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// All, in progress or finished books.
+class _Filters extends StatelessWidget {
+  const _Filters({required this.show, required this.onChanged});
+  final _Show show;
+  final ValueChanged<_Show> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    child: Wrap(
+      spacing: 8,
+      children: [
+        for (final (s, label) in const [
+          (_Show.all, 'All'),
+          (_Show.listening, 'Listening'),
+          (_Show.finished, 'Finished'),
+        ])
+          ChoiceChip(
+            label: Text(label),
+            selected: show == s,
+            onSelected: (_) => onChanged(s),
+          ),
+      ],
+    ),
+  );
 }
 
 /// A book added from this device that hasn't been played yet.
@@ -135,7 +190,15 @@ class _EntryTile extends StatelessWidget {
       await scope.library.remove(entry);
     }
 
-    List<Widget> menu() => [removeItem(context, 'Remove from library', remove)];
+    List<Widget> menu() => [
+      MenuItemButton(
+        onPressed: () => scope.player.markFinished(entry, !entry.finished),
+        child: Text(
+          entry.finished ? 'Mark as not finished' : 'Mark as finished',
+        ),
+      ),
+      removeItem(context, 'Remove from library', remove),
+    ];
 
     // Right-click opens the same menu as the ⋮ button, where the pointer is.
     return MenuAnchor(

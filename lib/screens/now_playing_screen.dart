@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app.dart';
@@ -6,110 +7,179 @@ import '../player/audiobook_player.dart';
 import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
+import '../widgets/cover_colors.dart';
+import '../widgets/marked_track.dart';
+import '../widgets/more_menu.dart';
+import 'marks.dart';
+import 'player_extras.dart';
 
-/// The full player: cover, chapter, seek bar, transport, speed and sleep timer.
+export 'player_extras.dart' show PlayerExtras;
+
+/// The full player: cover, chapter, seek bar, transport, speed, sleep timer and bookmarks, in
+/// the colours of the book's cover.
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({super.key});
 
-  static Route<void> route() => MaterialPageRoute(
-    fullscreenDialog: true,
-    builder: (_) => const NowPlayingScreen(),
-  );
+  static Route<void> route() => PlayerRoute();
 
   @override
   Widget build(BuildContext context) {
     final player = AppScope.of(context).player;
+    // Rebuilt only for another book: chapters, bookmarks and the history are followed by the
+    // parts that show them, not by the whole page and its colours.
+    return _OnNewBook(
+      current: player.current,
+      builder: (context, entry) => CoverTheme(
+        url: entry?.book.cover,
+        child: Builder(builder: (context) => _page(context, player, entry)),
+      ),
+    );
+  }
+
+  Widget _page(
+    BuildContext context,
+    AudiobookPlayer player,
+    LibraryEntry? entry,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
     // Wide windows show the chapters beside the player instead of in a sheet.
     final sidePane = MediaQuery.sizeOf(context).width >= 1000;
     return Scaffold(
+      backgroundColor: scheme.surface,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
         leading: IconButton(
           tooltip: 'Close',
           icon: Icon(isWide(context) ? Icons.close : Icons.keyboard_arrow_down),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          if (!sidePane)
+          if (!sidePane && entry != null)
             IconButton(
-              tooltip: 'Chapters',
+              tooltip: 'Chapters and bookmarks',
               icon: const Icon(Icons.format_list_numbered),
-              onPressed: () => _showChapters(context, player),
+              onPressed: () => _showMarks(context, player, entry),
             ),
-        ],
-      ),
-      body: ValueListenableBuilder<LibraryEntry?>(
-        valueListenable: player.current,
-        builder: (context, entry, _) {
-          if (entry == null) {
-            return const Center(child: Text('Nothing is playing.'));
-          }
-          final main = SafeArea(
-            child: LayoutBuilder(
-              builder: (context, box) {
-                final coverSize = (box.maxHeight * 0.42).clamp(140.0, 380.0);
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 8,
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: Column(
-                        children: [
-                          BookCover(
-                            title: entry.book.title,
-                            url: entry.book.cover,
-                            size: coverSize.toDouble(),
-                            radius: 16,
-                          ),
-                          const SizedBox(height: 20),
-                          _Titles(entry: entry),
-                          const SizedBox(height: 12),
-                          _StatusBanner(player: player),
-                          // Repaints often; keep it from repainting the cover and text.
-                          RepaintBoundary(child: PlayerSeekBar(player: player)),
-                          PlayerTransport(player: player, entry: entry),
-                          const SizedBox(height: 8),
-                          PlayerExtras(player: player),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-          if (!sidePane) return main;
-          return Row(
-            children: [
-              Expanded(child: main),
-              const VerticalDivider(width: 1),
-              SizedBox(
-                width: 380,
-                child: ChapterList(player: player, entry: entry),
+          MoreMenu(
+            items: [
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.tune),
+                onPressed: () => showAudioSettings(context, player.settings),
+                child: const Text('Playback settings'),
               ),
             ],
-          );
-        },
+          ),
+        ],
+      ),
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          CoverBackdrop(url: entry?.book.cover),
+          if (entry == null)
+            const Center(child: Text('Nothing is playing.'))
+          else
+            _body(context, player, entry, sidePane),
+        ],
       ),
     );
   }
 
-  static void _showChapters(BuildContext context, AudiobookPlayer player) {
-    final entry = player.current.value;
-    if (entry == null) return;
+  Widget _body(
+    BuildContext context,
+    AudiobookPlayer player,
+    LibraryEntry entry,
+    bool sidePane,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final main = SafeArea(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final coverSize = (box.maxHeight * 0.42).clamp(140.0, 380.0);
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, kToolbarHeight, 24, 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: scheme.shadow.withValues(alpha: 0.25),
+                            blurRadius: 32,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: Hero(
+                        tag: playerCoverTag,
+                        transitionOnUserGestures: true,
+                        child: BookCover(
+                          title: entry.book.title,
+                          url: entry.book.cover,
+                          size: coverSize.toDouble(),
+                          radius: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ListenableBuilder(
+                      listenable: player.current,
+                      builder: (_, _) => _Titles(entry: entry),
+                    ),
+                    const SizedBox(height: 12),
+                    _StatusBanner(player: player),
+                    // Repaints often; keep it from repainting the cover and text.
+                    RepaintBoundary(child: PlayerSeekBar(player: player)),
+                    ListenableBuilder(
+                      listenable: player.current,
+                      builder: (_, _) =>
+                          PlayerTransport(player: player, entry: entry),
+                    ),
+                    const SizedBox(height: 8),
+                    PlayerExtras(player: player),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!sidePane) return main;
+    return Row(
+      children: [
+        Expanded(child: main),
+        SizedBox(
+          width: 380,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(top: kToolbarHeight),
+              child: MarksPane(player: player, entry: entry),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static void _showMarks(
+    BuildContext context,
+    AudiobookPlayer player,
+    LibraryEntry entry,
+  ) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        builder: (context, scroll) => ChapterList(
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: MarksPane(
           player: player,
           entry: entry,
-          controller: scroll,
           onPicked: () => Navigator.of(context).pop(),
         ),
       ),
@@ -123,13 +193,11 @@ class ChapterList extends StatelessWidget {
     super.key,
     required this.player,
     required this.entry,
-    this.controller,
     this.onPicked,
   });
 
   final AudiobookPlayer player;
   final LibraryEntry entry;
-  final ScrollController? controller;
   final VoidCallback? onPicked;
 
   @override
@@ -139,7 +207,6 @@ class ChapterList extends StatelessWidget {
       // The current chapter moves while chapters inside one file play.
       listenable: player.current,
       builder: (context, _) => ListView.builder(
-        controller: controller,
         itemCount: entry.book.chapters.length,
         itemBuilder: (context, i) {
           final here = i == entry.chapterIndex;
@@ -277,6 +344,31 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
   /// Where the thumb is while dragging; null otherwise.
   double? _dragging;
 
+  /// The track with the chapter starts and bookmarks inside the open file ([max] ms long).
+  MarkedTrackShape? _marks(ColorScheme scheme, double max) {
+    final entry = widget.player.current.value;
+    if (entry == null || max <= 0) return null;
+    final chapters = entry.book.chapters;
+    final here = chapters[entry.chapterIndex];
+    bool inFile(int i) =>
+        i == entry.chapterIndex || chapters[i].sharesFileWith(here);
+    double at(Duration d) => (d.inMilliseconds / max).clamp(0.0, 1.0);
+    return MarkedTrackShape(
+      chapters: [
+        for (final c in chapters)
+          if (c.sharesFileWith(here) &&
+              (c.start ?? Duration.zero) > Duration.zero)
+            at(c.start!),
+      ],
+      bookmarks: [
+        for (final m in entry.bookmarks)
+          if (inFile(m.chapterIndex)) at(m.position),
+      ],
+      gapColor: scheme.surface,
+      bookmarkColor: scheme.tertiary,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -299,14 +391,18 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
         final remaining = total == Duration.zero
             ? '--:--'
             : '-${formatDuration(Duration(milliseconds: (left.inMilliseconds / speed).round()))}';
-        final slider = Slider(
-          value: max > 0 ? value : 0,
-          max: max > 0 ? max : 1,
-          onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
-          onChangeEnd: (v) {
-            widget.player.seek(Duration(milliseconds: v.round()));
-            setState(() => _dragging = null);
-          },
+        final slider = SliderTheme(
+          data: SliderTheme.of(context)
+              .copyWith(trackShape: _marks(theme.colorScheme, max)),
+          child: Slider(
+            value: max > 0 ? value : 0,
+            max: max > 0 ? max : 1,
+            onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
+            onChangeEnd: (v) {
+              widget.player.seek(Duration(milliseconds: v.round()));
+              setState(() => _dragging = null);
+            },
+          ),
         );
         if (widget.compact) {
           return Row(
@@ -408,105 +504,138 @@ class PlayerTransport extends StatelessWidget {
   }
 }
 
-class PlayerExtras extends StatelessWidget {
-  const PlayerExtras({super.key, required this.player});
-  final AudiobookPlayer player;
+/// The cover that flies from the player bar into the player and back.
+const playerCoverTag = 'player-cover';
 
-  static const speeds = [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5];
+/// Builds with the open book, again only when another book is opened (a book that plays on is
+/// the same object, with its chapter and marks changing inside).
+class _OnNewBook extends StatefulWidget {
+  const _OnNewBook({required this.current, required this.builder});
 
-  /// 1.0 → "1×", 1.25 → "1.25×", 1.5 → "1.5×".
-  static String _speedLabel(double s) =>
-      '${s.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')}×';
+  final ValueListenable<LibraryEntry?> current;
+  final Widget Function(BuildContext context, LibraryEntry? entry) builder;
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        StreamBuilder<double>(
-          stream: player.speedStream,
-          initialData: player.speed,
-          builder: (context, snap) => TextButton.icon(
-            onPressed: () => _pickSpeed(context, snap.data ?? 1),
-            icon: const Icon(Icons.speed),
-            label: Text(_speedLabel(snap.data ?? 1)),
-          ),
-        ),
-        const SizedBox(width: 16),
-        ValueListenableBuilder<SleepTimer?>(
-          valueListenable: player.sleepTimer,
-          builder: (context, timer, _) => TextButton.icon(
-            onPressed: () => _pickSleep(context),
-            icon: Icon(timer == null ? Icons.bedtime_outlined : Icons.bedtime),
-            label: Text(
-              timer == null
-                  ? 'Sleep timer'
-                  : timer.endOfChapter
-                  ? 'End of chapter'
-                  : 'Until ${TimeOfDay.fromDateTime(timer.endsAt!).format(context)}',
-            ),
-          ),
-        ),
-      ],
-    );
+  State<_OnNewBook> createState() => _OnNewBookState();
+}
+
+class _OnNewBookState extends State<_OnNewBook> {
+  late LibraryEntry? _entry = widget.current.value;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.current.addListener(_check);
   }
 
-  void _pickSpeed(BuildContext context, double current) {
-    showPanel<void>(
-      context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in speeds)
-              ChoiceChip(
-                label: Text(_speedLabel(s)),
-                selected: (s - current).abs() < 0.01,
-                onSelected: (_) {
-                  player.setSpeed(s);
-                  Navigator.of(context).pop();
-                },
-              ),
-            const SizedBox(width: double.infinity, height: 16),
-          ],
-        ),
-      ),
-    );
+  @override
+  void dispose() {
+    widget.current.removeListener(_check);
+    super.dispose();
   }
 
-  void _pickSleep(BuildContext context) {
-    void choose(VoidCallback action) {
-      action();
-      Navigator.of(context).pop();
+  void _check() {
+    if (!identical(widget.current.value, _entry)) {
+      setState(() => _entry = widget.current.value);
     }
+  }
 
-    showPanel<void>(
-      context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final minutes in [10, 15, 30, 45, 60])
-              ListTile(
-                title: Text('$minutes minutes'),
-                onTap: () => choose(
-                  () => player.setSleepTimer(Duration(minutes: minutes)),
-                ),
-              ),
-            ListTile(
-              title: const Text('End of chapter'),
-              onTap: () => choose(player.setSleepAtChapterEnd),
-            ),
-            if (player.sleepTimer.value != null)
-              ListTile(
-                title: const Text('Turn off'),
-                onTap: () => choose(player.cancelSleepTimer),
-              ),
-          ],
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _entry);
+}
+
+/// Opens the player: it rises from the player bar while the cover flies into place. On phones it
+/// slides up from the bottom and a drag down puts it back.
+class PlayerRoute extends PageRoute<void> {
+  PlayerRoute() : super(fullscreenDialog: true);
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 450);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 320);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => const NowPlayingScreen();
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Easing.emphasizedDecelerate,
+      reverseCurve: Easing.emphasizedAccelerate,
+    );
+    if (isWide(context)) {
+      // A window: the player rises a little and fades in where it will be.
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0, 0.04),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
         ),
+      );
+    }
+    return SlideTransition(
+      position: Tween(
+        begin: const Offset(0, 1),
+        end: Offset.zero,
+      ).animate(curved),
+      child: GestureDetector(
+        onVerticalDragStart: (_) => _grab(),
+        onVerticalDragUpdate: (d) => _drag(context, d.primaryDelta ?? 0),
+        onVerticalDragEnd: (d) => _release(d.primaryVelocity ?? 0),
+        onVerticalDragCancel: () => _release(0),
+        child: child,
       ),
     );
+  }
+
+  /// Whether a drag is under way: a tap also ends in a "cancel", with nothing to undo.
+  bool _dragging = false;
+
+  void _grab() {
+    _dragging = true;
+    navigator?.didStartUserGesture();
+  }
+
+  /// Follows the finger down (and back up).
+  void _drag(BuildContext context, double dy) {
+    if (!_dragging) return;
+    final height = MediaQuery.sizeOf(context).height;
+    controller!.value -= dy / height;
+  }
+
+  /// Closes after a flick or past a third of the way down, otherwise springs back.
+  void _release(double velocity) {
+    if (!_dragging) return;
+    _dragging = false;
+    final close = velocity > 700 || controller!.value < 0.67;
+    if (close) {
+      navigator?.pop();
+    } else {
+      controller!.forward();
+    }
+    navigator?.didStopUserGesture();
   }
 }

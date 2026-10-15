@@ -106,4 +106,47 @@ void main() {
     await store.remove(first);
     expect(LibraryStore(prefs).entries.map((e) => e.book.id), ['b2']);
   });
+
+  test('bookmarks and history survive a restart', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs);
+    final entry = store.entryFor('addon', book)
+      ..chapterIndex = 1
+      ..position = const Duration(minutes: 2);
+    entry.bookmarks.add(entry.here(note: 'The twist'));
+    for (var i = 0; i < 12; i++) {
+      entry.remember(
+        Mark(
+          chapterIndex: 0,
+          position: Duration(seconds: i),
+          createdAt: DateTime(2026),
+        ),
+      );
+    }
+    await store.save(entry);
+
+    final reloaded = LibraryStore(prefs).find('addon', 'b1')!;
+    expect(reloaded.bookmarks.single.note, 'The twist');
+    expect(reloaded.bookmarks.single.chapterIndex, 1);
+    expect(reloaded.bookmarks.single.position, const Duration(minutes: 2));
+    expect(reloaded.history.length, LibraryEntry.historyLength);
+    expect(reloaded.history.first.position, const Duration(seconds: 11));
+  });
+
+  test('marks outside a book that now has fewer chapters are dropped', () {
+    final json = LibraryEntry(addonId: 'a', book: book).toJson()
+      ..['bookmarks'] = [
+        {'chapter': 2, 'positionMs': 1000, 'at': '2026-01-01T00:00:00Z'},
+        {'chapter': 9, 'positionMs': 1000, 'at': '2026-01-01T00:00:00Z'},
+        {'chapter': 'bad'},
+      ];
+    final entry = LibraryEntry.fromJson(json);
+    expect(entry.bookmarks.map((m) => m.chapterIndex), [2]);
+    // Entries saved before bookmarks existed load with none.
+    expect(
+      LibraryEntry.fromJson(LibraryEntry(addonId: 'a', book: book).toJson())
+          .history,
+      isEmpty,
+    );
+  });
 }

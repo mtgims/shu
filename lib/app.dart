@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 
 import 'addons/addon_store.dart';
@@ -111,8 +113,13 @@ class HomeShellState extends State<HomeShell> {
   }
 
   /// Saves the listening position whenever the app leaves the screen; the OS may end it there.
+  /// Closing a desktop window ends the app without hiding it first, so that saves too.
   late final _lifecycle = AppLifecycleListener(
     onHide: () => AppScope.of(context).player.saveNow(),
+    onExitRequested: () async {
+      await AppScope.of(context).player.saveNow();
+      return AppExitResponse.exit;
+    },
   );
 
   @override

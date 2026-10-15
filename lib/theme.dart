@@ -1,13 +1,22 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 /// Warm amber on deep plum: the same palette as the addon's settings page.
 const amber = Color(0xFFE8B04A);
 
-ThemeData buildTheme(Brightness brightness) {
+/// The app's theme, or with [seed] one in the colours of a book cover (the player).
+ThemeData buildTheme(Brightness brightness, {Color? seed}) {
   final dark = brightness == Brightness.dark;
-  var scheme = ColorScheme.fromSeed(seedColor: amber, brightness: brightness);
-  if (dark) {
+  var scheme = ColorScheme.fromSeed(
+    seedColor: seed ?? amber,
+    brightness: brightness,
+    // Keeps a cover's own hue in the buttons instead of a pale tint of it.
+    dynamicSchemeVariant: seed == null
+        ? DynamicSchemeVariant.tonalSpot
+        : DynamicSchemeVariant.fidelity,
+  );
+  if (dark && seed == null) {
     scheme = scheme.copyWith(
       primary: amber,
       onPrimary: const Color(0xFF1A1408),
@@ -24,6 +33,16 @@ ThemeData buildTheme(Brightness brightness) {
   }
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
   return base.copyWith(
+    // Desktop pages fade forward instead of zooming; Android keeps predictive back.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      },
+    ),
     textTheme: base.textTheme.copyWith(
       headlineMedium: base.textTheme.headlineMedium?.copyWith(
         fontWeight: FontWeight.w700,

@@ -5,11 +5,15 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
-/// The work behind an extension's `host.*` calls, shared by all extensions. Parsing HTML here,
-/// in compiled Dart, is much faster than in the JS interpreter.
+/// The work behind an extension's `host.*` calls. Parsing HTML here, in compiled Dart, is much
+/// faster than in the JS interpreter.
 class ExtensionHost {
-  ExtensionHost({http.Client? httpClient})
+  ExtensionHost({http.Client? httpClient, this.sharedCache})
     : _http = httpClient ?? http.Client();
+
+  /// Where `cacheGet` and `cacheSet` go instead, when set: an extension's isolate keeps its
+  /// cache in the app's host, so it outlives the isolate.
+  final Future<Object?> Function(String op, List<Object?> args)? sharedCache;
 
   /// One client for every extension, so connections to the same sites are reused.
   final http.Client _http;
@@ -28,6 +32,9 @@ class ExtensionHost {
   final _documents = <({String html, dom.Document doc})>[];
 
   Future<Object?> run(String op, List<Object?> args) async {
+    if (sharedCache != null && (op == 'cacheGet' || op == 'cacheSet')) {
+      return sharedCache!(op, args);
+    }
     switch (op) {
       case 'fetch':
         return fetch(

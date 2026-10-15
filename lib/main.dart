@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -9,8 +10,10 @@ import 'addons/addon_store.dart';
 import 'app.dart';
 import 'library/library_store.dart';
 import 'player/audiobook_player.dart';
+import 'player/player_settings.dart';
 import 'updates/update_banner.dart';
 import 'updates/updater.dart';
+import 'widgets/cover_colors.dart';
 import 'widgets/cover_image.dart';
 
 Future<void> main() async {
@@ -49,7 +52,8 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
   final addons = await AddonStore.load(prefs);
   final library = LibraryStore(prefs);
 
-  AudiobookPlayer build() => AudiobookPlayer(library, addons, prefs);
+  final settings = PlayerSettings(prefs);
+  AudiobookPlayer build() => AudiobookPlayer(library, addons, settings);
   // audio_service gives background playback and system media controls on Android, iOS,
   // macOS and Linux (MPRIS). It has no Windows backend, where the player runs on its own.
   final player = !systemControls || Platform.isWindows
@@ -66,6 +70,26 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
             rewindInterval: AudiobookPlayer.skipBack,
           ),
         );
+
+  player.onServerMove = (from, before) =>
+      messengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text('Carrying on from where you got to on $from'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () => player.jumpTo(before),
+          ),
+        ),
+      );
+
+  // The player opens in the cover's colours, over its blurred copy: both are made as soon as a
+  // book is open.
+  player.current.addListener(() {
+    final cover = player.current.value?.book.cover;
+    if (cover == null) return;
+    unawaited(CoverColors.seedOf(cover));
+    unawaited(CoverColors.blurredOf(cover));
+  });
 
   // Decoded images kept in memory; covers are decoded small, so this holds plenty.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 48 << 20;

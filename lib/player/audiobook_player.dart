@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../addons/addon_store.dart';
 import '../addons/client.dart';
 import '../addons/models.dart';
 import '../library/library_store.dart';
+import 'player_settings.dart';
+import 'server_sync.dart';
+import 'sleep.dart';
+
+export 'sleep.dart' show SleepTimer;
 
 enum PlayerPhase { idle, loading, downloading, ready, error }
 
@@ -24,15 +28,6 @@ class PlayerStatus {
   final double? progress;
 }
 
-/// When the sleep timer stops playback: at a time, or when the chapter ends.
-class SleepTimer {
-  const SleepTimer.at(DateTime this.endsAt) : endOfChapter = false;
-  const SleepTimer.endOfChapter() : endsAt = null, endOfChapter = true;
-
-  final DateTime? endsAt;
-  final bool endOfChapter;
-}
-
 /// Another version of the same catalog book, with its book when already loaded.
 typedef Alternative = ({InstalledAddon addon, String bookId, Book? book});
 
@@ -46,18 +41,19 @@ class CurrentEntry extends ValueNotifier<LibraryEntry?> {
 /// Plays one book at a time, chapter by chapter. It is also the audio_service handler, so the
 /// lock screen, notification and media keys drive the same object as the app's UI.
 class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
-  AudiobookPlayer(this._library, this._addons, this._prefs) {
+  AudiobookPlayer(this._library, this._addons, this.settings) {
     _player.playbackEventStream.listen(_broadcast, onError: _onPlaybackError);
     // just_audio 0.10 reports playback errors here, not as errors of the event stream.
     _player.errorStream.listen((e) => _onPlaybackError(e, StackTrace.current));
     _player.playingStream.listen((playing) {
       _broadcast(_player.playbackEvent);
+      _pausedAt = playing ? null : (_pausedAt ?? now());
       // Progress is saved while playing only: an idle app wakes up for nothing.
       _saveTimer?.cancel();
       _saveTimer = playing
           ? Timer.periodic(
               const Duration(seconds: 15),
-              (_) => _saveProgress(notify: false),
+              (_) => _saveProgress(notify: false, tick: true),
             )
           : null;
       _chapterTimer?.cancel();
@@ -74,29 +70,56 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         mediaItem.add(item.copyWith(duration: duration));
       }
     });
-    _player.setSpeed(_prefs.getDouble(_speedKey) ?? 1.0);
+    _player.setSpeed(settings.speed);
+    _applyEffects();
+    settings.addListener(_applyEffects);
+    // The notification shows "+5 min" while a timed sleep timer runs.
+    sleepTimer.addListener(() => _broadcast(_player.playbackEvent));
   }
 
   static const skipBack = Duration(seconds: 15);
   static const skipForward = Duration(seconds: 30);
-  static const _speedKey = 'speed';
   static const _linkLifetime = Duration(hours: 3);
   static const _retryEvery = Duration(seconds: 30);
   static const _openTimeout = Duration(seconds: 30);
 
   final LibraryStore _library;
   final AddonStore _addons;
-  final SharedPreferences _prefs;
-  final AudioPlayer _player = AudioPlayer();
+  final PlayerSettings settings;
+
+  /// Raises quiet recordings (Android), see [PlayerSettings.voiceBoost].
+  final _boost = AndroidLoudnessEnhancer();
+  late final AudioPlayer _player = AudioPlayer(
+    audioPipeline: PlayerSettings.hasAudioEffects
+        ? AudioPipeline(androidAudioEffects: [_boost])
+        : null,
+  );
 
   final status = ValueNotifier<PlayerStatus>(PlayerStatus.idle);
   final current = CurrentEntry();
-  final sleepTimer = ValueNotifier<SleepTimer?>(null);
+  late final sleepTimer = SleepControl(
+    settings,
+    onSleep: pause,
+    onVolume: _player.setVolume,
+    now: () => now(),
+  );
+
+  /// The clock, replaced in tests.
+  @visibleForTesting
+  DateTime Function() now = DateTime.now;
+
+  final _sync = ServerSync();
+
+  /// Told when a book jumped to where the user got to on its media server ([from]), with the
+  /// place it left to go back to.
+  void Function(String from, Mark before)? onServerMove;
+
+  /// When playback stopped, for the step back on resuming ([PlayerSettings.autoRewind]).
+  DateTime? _pausedAt;
 
   InstalledAddon? _addon;
   int _loadToken = 0;
   Timer? _retryTimer;
-  Timer? _sleepTimer;
   Timer? _saveTimer;
   Timer? _chapterTimer;
   final Map<String, ({String url, DateTime until})> _links = {};
@@ -168,7 +191,13 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     _workKey = workKey;
     _started = false;
     await _saveProgress();
+    final before = _library.find(addon.id, book.id);
     final entry = _library.entryFor(addon.id, book, workKey: workKey);
+    if (chapterIndex == null && before?.finished != true) {
+      if (!await _catchUp(addon, entry, before?.updatedAt) && before != null) {
+        entry.position = _rewound(entry.position, before.updatedAt);
+      }
+    }
     if (chapterIndex != null && chapterIndex != entry.chapterIndex) {
       _moveTo(entry, chapterIndex);
     } else if (chapterIndex == null && entry.finished) {
@@ -303,16 +332,87 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await openBook(addon, entry.book);
   }
 
-  Future<void> playChapter(int index) async {
+  /// Plays chapter [index] from its start; the place left is kept in the history.
+  Future<void> playChapter(int index) => _playChapter(index, remember: true);
+
+  Future<void> _playChapter(int index, {required bool remember}) async {
     final entry = current.value;
     if (entry == null || index < 0 || index >= entry.book.chapters.length) {
       return;
     }
     await _saveProgress();
+    if (remember) _remember(entry);
     _moveTo(entry, index);
     await _library.save(entry);
     current.changed();
     await _loadChapter(play: true);
+  }
+
+  /// Plays from [mark] (a bookmark, or a place in the history).
+  Future<void> jumpTo(Mark mark) async {
+    final entry = current.value;
+    if (entry == null || !mark.fits(entry.book)) return;
+    await _saveProgress();
+    _remember(entry);
+    entry.chapterIndex = mark.chapterIndex;
+    entry.position = mark.position;
+    await _library.save(entry);
+    current.changed();
+    // Within the open file this only seeks.
+    await _loadChapter(play: true);
+  }
+
+  /// Marks a book finished, or not finished (it then starts over).
+  Future<void> markFinished(LibraryEntry entry, bool finished) async {
+    final open = current.value?.key == entry.key;
+    if (open && finished) await pause();
+    final restart = !finished && entry.finished;
+    if (restart) _moveTo(entry, 0);
+    entry.finished = finished;
+    await _library.save(entry);
+    _sync.report(_addons.byId(entry.addonId), entry);
+    if (!open) return;
+    current.changed();
+    if (restart && status.value.phase == PlayerPhase.ready) {
+      await _loadChapter(play: false);
+    }
+  }
+
+  /// Bookmarks where the user is now.
+  Future<Mark?> addBookmark() async {
+    final entry = current.value;
+    if (entry == null) return null;
+    if (status.value.phase == PlayerPhase.ready) {
+      entry.position = _player.position;
+    }
+    final mark = entry.here();
+    entry.bookmarks.add(mark);
+    await _library.save(entry);
+    current.changed();
+    return mark;
+  }
+
+  /// Replaces bookmark [old] with [mark], or deletes it when [mark] is null.
+  Future<void> changeBookmark(Mark old, Mark? mark) async {
+    final entry = current.value;
+    if (entry == null) return;
+    final i = entry.bookmarks.indexOf(old);
+    if (i < 0) return;
+    if (mark == null) {
+      entry.bookmarks.removeAt(i);
+    } else {
+      entry.bookmarks[i] = mark;
+    }
+    await _library.save(entry);
+    current.changed();
+  }
+
+  /// Keeps where the user is before a jump, so an accidental tap can be undone.
+  void _remember(LibraryEntry entry) {
+    if (status.value.phase == PlayerPhase.ready) {
+      entry.position = _player.position;
+    }
+    entry.remember(entry.here());
   }
 
   /// Tries the current chapter again, e.g. after a download finished.
@@ -539,21 +639,25 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       return;
     }
     if (next < entry.book.chapters.length) {
-      unawaited(playChapter(next));
+      unawaited(_playChapter(next, remember: false));
     } else {
       entry.finished = true;
       entry.position = Duration.zero;
       unawaited(_player.pause());
       unawaited(_library.save(entry));
+      _sync.report(_addon, entry);
       status.value = const PlayerStatus(PlayerPhase.idle, message: 'Finished');
     }
   }
 
-  Future<void> _saveProgress({bool notify = true}) async {
+  /// Saves where the user is, and tells the media server it plays from ([tick]: the regular
+  /// save while playing, sent less often).
+  Future<void> _saveProgress({bool notify = true, bool tick = false}) async {
     final entry = current.value;
     if (entry == null || status.value.phase != PlayerPhase.ready) return;
     entry.position = _player.position;
     await _library.save(entry, notify: notify);
+    _sync.report(_addon, entry, tick: tick);
   }
 
   /// mpv messages that the desktop audio backend passes on as errors although playback goes on.
@@ -598,6 +702,12 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     _ => e.toString(),
   };
 
+  static final _sleepPlus = MediaControl.custom(
+    androidIcon: 'drawable/ic_sleep_add',
+    label: 'Sleep timer +5 min',
+    name: sleepPlusAction,
+  );
+
   void _broadcast(PlaybackEvent event) {
     final playing = _player.playing;
     playbackState.add(
@@ -606,6 +716,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
           MediaControl.rewind,
           if (playing) MediaControl.pause else MediaControl.play,
           MediaControl.fastForward,
+          if (sleepTimer.value?.endsAt != null) _sleepPlus,
         ],
         systemActions: const {
           MediaAction.seek,
@@ -634,11 +745,44 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    final entry = current.value;
     if (status.value.phase == PlayerPhase.ready) {
+      final back = _rewound(_player.position, _pausedAt);
+      if (back != _player.position) await _player.seek(back);
       unawaited(_player.play());
-    } else if (current.value != null) {
+    } else if (entry != null) {
+      // A book put back at start (or finished): away since it was last saved.
+      if (status.value.phase == PlayerPhase.idle) {
+        if (!await _catchUp(_addon, entry, entry.updatedAt)) {
+          entry.position = _rewound(entry.position, entry.updatedAt);
+        }
+      }
       await _loadChapter(play: true);
     }
+  }
+
+  /// Moves [entry] to where the user got to on its media server, when they listened there after
+  /// Shu last saved it ([since]). Whether it moved.
+  Future<bool> _catchUp(
+    InstalledAddon? addon,
+    LibraryEntry entry,
+    DateTime? since,
+  ) async {
+    final place = await _sync.newer(addon, entry, since);
+    if (place == null) return false;
+    final before = entry.here();
+    entry.remember(before);
+    entry.chapterIndex = place.chapterIndex;
+    entry.position = place.position;
+    onServerMove?.call(ServerSync.name(addon) ?? 'the server', before);
+    return true;
+  }
+
+  /// [position] stepped back for a pause that began at [since], see [rewindAfter].
+  Duration _rewound(Duration position, DateTime? since) {
+    if (since == null || !settings.autoRewind) return position;
+    final target = position - rewindAfter(now().difference(since));
+    return target < Duration.zero ? Duration.zero : target;
   }
 
   @override
@@ -651,8 +795,21 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    final entry = current.value;
+    if (entry != null &&
+        status.value.phase == PlayerPhase.ready &&
+        (position - _player.position).abs() > const Duration(minutes: 1)) {
+      _remember(entry);
+    }
     await _player.seek(position);
+    // The desktop backend reports the old position for a moment after seeking: wait for the new
+    // one, so what is saved or bookmarked next is right.
+    await _player.positionStream
+        .firstWhere((p) => (p - position).abs() < const Duration(seconds: 1))
+        .timeout(const Duration(seconds: 1), onTimeout: () => position);
     _syncChapter();
+    // While paused nothing else saves it before the app may be closed.
+    if (!_player.playing) await _saveProgress();
   }
 
   @override
@@ -684,7 +841,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         entry.book.chapters[entry.chapterIndex].start ?? Duration.zero;
     if (_player.position - start > const Duration(seconds: 5) ||
         entry.chapterIndex == 0) {
-      await _player.seek(start);
+      await seek(start);
     } else {
       await playChapter(entry.chapterIndex - 1);
     }
@@ -693,8 +850,25 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> setSpeed(double speed) async {
     await _player.setSpeed(speed);
-    await _prefs.setDouble(_speedKey, speed);
+    settings.speed = speed;
   }
+
+  void _applyEffects() {
+    if (!PlayerSettings.hasAudioEffects) return;
+    unawaited(_player.setSkipSilenceEnabled(settings.skipSilence));
+    unawaited(_boost.setTargetGain(6)); // dB
+    unawaited(_boost.setEnabled(settings.voiceBoost));
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name == sleepPlusAction) sleepTimer.extend();
+  }
+
+  static const sleepPlusAction = 'sleepPlus5';
 
   /// Stops playback and closes the book (progress is kept).
   @override
@@ -711,28 +885,76 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await super.stop();
   }
 
-  void setSleepTimer(Duration duration) {
-    _sleepTimer?.cancel();
-    sleepTimer.value = SleepTimer.at(DateTime.now().add(duration));
-    _sleepTimer = Timer(duration, () {
-      sleepTimer.value = null;
-      unawaited(pause());
-    });
+  void setSleepTimer(Duration duration) => sleepTimer.setFor(duration);
+
+  void setSleepAtChapterEnd() => sleepTimer.setEndOfChapter();
+
+  void cancelSleepTimer() => sleepTimer.cancel();
+
+  // The library for car screens and other media browsers (Android Auto).
+
+  static const _continueId = 'continue';
+  static const _finishedId = 'finished';
+
+  @override
+  Future<List<MediaItem>> getChildren(
+    String parentMediaId, [
+    Map<String, dynamic>? options,
+  ]) async => switch (parentMediaId) {
+    AudioService.browsableRootId => const [
+      MediaItem(id: _continueId, title: 'Continue listening', playable: false),
+      MediaItem(id: _finishedId, title: 'Finished', playable: false),
+    ],
+    // What the system offers to resume, e.g. when a car connects.
+    AudioService.recentRootId => _browsable(finished: false).take(1).toList(),
+    _continueId => _browsable(finished: false),
+    _finishedId => _browsable(finished: true),
+    _ => const [],
+  };
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    final entry = _library.entries.where((e) => e.key == mediaId).firstOrNull;
+    return entry == null ? null : _browseItem(entry);
   }
 
-  void setSleepAtChapterEnd() {
-    _sleepTimer?.cancel();
-    sleepTimer.value = const SleepTimer.endOfChapter();
+  @override
+  Future<void> playFromMediaId(
+    String mediaId, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    final entry = _library.entries.where((e) => e.key == mediaId).firstOrNull;
+    if (entry != null) await resume(entry);
   }
 
-  void cancelSleepTimer() {
-    _sleepTimer?.cancel();
-    sleepTimer.value = null;
-  }
+  List<MediaItem> _browsable({required bool finished}) => [
+    for (final e in _library.entries)
+      if (e.finished == finished && _addons.byId(e.addonId) != null)
+        _browseItem(e),
+  ].take(30).toList();
+
+  static MediaItem _browseItem(LibraryEntry entry) => MediaItem(
+    id: entry.key,
+    title: entry.book.title,
+    artist: entry.book.byline.isEmpty ? null : entry.book.byline,
+    artUri: entry.book.cover == null ? null : Uri.tryParse(entry.book.cover!),
+    playable: true,
+    // How far along, as Android Auto shows it under the title.
+    extras: {
+      'android.media.extra.PLAYBACK_STATUS': entry.finished
+          ? 2
+          : entry.progress > 0
+          ? 1
+          : 0,
+      'androidx.media.MediaItem.Extras.COMPLETION_PERCENTAGE': entry.progress,
+    },
+  );
 
   Future<void> dispose() async {
     _saveTimer?.cancel();
     _chapterTimer?.cancel();
+    sleepTimer.dispose();
+    settings.removeListener(_applyEffects);
     await _saveProgress();
     await _player.dispose();
   }

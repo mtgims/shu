@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.5.0 - 2026-10-15
+
+### New
+- Bookmarks: mark a place with the button under the player, give it a note, and find it under
+  the chapters (marks also show on the seek bar)
+- History: the places you jumped away from (picking a chapter, dragging far) are kept, so a
+  slip of the finger is easy to undo
+- Progress syncs with Audiobookshelf and Jellyfin: the server's apps carry on where Shu
+  stopped, and Shu picks up where you got to elsewhere (with an Undo)
+- Android Auto: your books in progress and finished ones, and the player, in the car
+- The sleep timer fades out over its last seconds, has a +5 minutes button (also in the
+  notification), and on phones a shake near the end adds 5 minutes
+- The sleep timer offers the time you chose last first
+- Skip silence and voice boost on Android (Now Playing → ⋮ → Playback settings)
+- Library: show all, in progress or finished books, and mark a book finished or not
+
+### Changed
+- After a pause Shu steps back a few seconds (more after a long break) so you find the thread
+  again; it can be turned off in Playback settings
+- The player takes on the main colour of the book's cover, over a blurred copy of it, and
+  has those colours ready before it opens
+- Opening the player is smooth: it slides up from the player bar with the cover flying into
+  place; on a phone, drag it down to close
+- On a computer, pages fade forward instead of zooming
+- Extensions do their work in the background, so the app no longer stutters while a book page,
+  its versions or a search load
+- Speed goes from 0.5× to 3× in steps of 0.05, with a slider and − / + buttons
+- Chapters, bookmarks and history are tabs, beside the player in wide windows
+
+### Fixed
+- Closing the window on a computer now saves where you are in the book: it used to come back
+  up to 15 seconds earlier
+- A position you moved to while paused is saved right away
+
 ## 0.4.2 - 2026-10-14
 
 ### New

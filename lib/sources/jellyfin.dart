@@ -309,8 +309,8 @@ class JellyfinBackend extends ServerBackend {
     );
   }
 
-  @override
-  Future<Book> book(String bookId) async {
+  /// The audio files of book [bookId], in order.
+  Future<List<_Item>> _files(String bookId, {String fields = ''}) async {
     final bar = bookId.indexOf('|');
     final parentId = bar < 0 ? bookId : bookId.substring(0, bar);
     final album = bar < 0 ? '' : bookId.substring(bar + 1);
@@ -319,11 +319,21 @@ class JellyfinBackend extends ServerBackend {
       'IncludeItemTypes': 'AudioBook',
       'SortBy': 'ParentIndexNumber,IndexNumber,SortName',
       'Limit': '1000',
-      'Fields': 'ParentId,Chapters,Overview,Genres,People,MediaSources',
+      'Fields': 'ParentId$fields',
     })).where((f) => _album(f) == album).toList();
     if (files.isEmpty) {
       throw AddonException('This book is no longer on the Jellyfin server.');
     }
+    return files;
+  }
+
+  @override
+  Future<Book> book(String bookId) async {
+    final files = await _files(
+      bookId,
+      fields: ',Chapters,Overview,Genres,People,MediaSources',
+    );
+    final parentId = bookId.split('|').first;
     final parent = (await _parents(files.take(1)))[parentId];
     final summary = _summary(files, parent);
     final first = files.first;
@@ -408,6 +418,84 @@ class JellyfinBackend extends ServerBackend {
       'api_key': _token,
     }).toString(),
   );
+
+  /// Jellyfin keeps a position for each audio file: the file played last is where the user is.
+  @override
+  Future<RemoteProgress?> progress(Book book) async {
+    final files = await _files(book.id);
+    Map<String, dynamic> data(_Item f) =>
+        f['UserData'] as Map<String, dynamic>? ?? const {};
+    var latest = -1;
+    DateTime? latestAt;
+    for (final (i, f) in files.indexed) {
+      final at = DateTime.tryParse(data(f)['LastPlayedDate'] as String? ?? '');
+      if (at != null && (latestAt == null || at.isAfter(latestAt))) {
+        latest = i;
+        latestAt = at;
+      }
+    }
+    if (latestAt == null) return null;
+    if (files.every((f) => data(f)['Played'] == true)) {
+      return (
+        place: (
+          chapterIndex: book.chapters.length - 1,
+          position: Duration.zero,
+        ),
+        finished: true,
+        updatedAt: latestAt,
+      );
+    }
+    final last = data(files[latest]);
+    final ticks = (last['PlaybackPositionTicks'] as num?)?.toInt() ?? 0;
+    // A file played to the end: the user is at the start of the next one.
+    final next =
+        ticks == 0 && last['Played'] == true && latest + 1 < files.length;
+    final fileId = files[next ? latest + 1 : latest]['Id'];
+    final position = Duration(microseconds: next ? 0 : ticks ~/ 10);
+    int? chapter;
+    for (final (i, c) in book.chapters.indexed) {
+      if ((c.file ?? c.id) == fileId &&
+          (chapter == null || (c.start ?? Duration.zero) <= position)) {
+        chapter = i;
+      }
+    }
+    if (chapter == null) return null;
+    return (
+      place: (chapterIndex: chapter, position: position),
+      finished: false,
+      updatedAt: latestAt,
+    );
+  }
+
+  /// Sets the position of the file playing, or marks every file played. (Jellyfin's "playing
+  /// progress" calls only count inside a playback session, which streaming files don't open.)
+  @override
+  Future<void> report(
+    Book book,
+    BookPlace place, {
+    required bool finished,
+  }) async {
+    final chapter = book.chapters[place.chapterIndex];
+    final files = finished
+        ? {for (final c in book.chapters) c.file ?? c.id}
+        : {chapter.file ?? chapter.id};
+    final now = DateTime.now().toUtc().toIso8601String();
+    for (final id in files) {
+      await _http.json(
+        'POST',
+        '/UserItems/$id/UserData',
+        query: {'userId': userId},
+        headers: {'authorization': _authorization(deviceId, _token)},
+        body: {
+          'PlaybackPositionTicks': finished
+              ? 0
+              : place.position.inMicroseconds * 10,
+          'Played': finished,
+          'LastPlayedDate': now,
+        },
+      );
+    }
+  }
 
   @override
   Future<List<BookSummary>> releases(Book work) async => const [];
