@@ -144,14 +144,26 @@ class AddonStore extends ChangeNotifier {
   Future<void> _restore() async {
     final raw = _prefs.getString(_key);
     if (raw == null) return;
-    final items = jsonDecode(raw) as List;
+    final List<Object?> items;
+    try {
+      items = jsonDecode(raw) as List;
+    } on Object catch (e) {
+      // Set aside rather than lost: the logins and extensions in it can be recovered.
+      debugPrint('Unreadable addon list, kept as $_key.bad: $e');
+      await _prefs.setString('$_key.bad', raw);
+      return;
+    }
+    // A later copy of the same addon (reinstalled after its entry became unreadable) wins.
+    void add(InstalledAddon addon) => _addons
+      ..removeWhere((a) => a.id == addon.id)
+      ..add(addon);
     // Extension code files are read all at once, not one after another.
     final codes = await Future.wait([for (final item in items) _codeOf(item)]);
     for (final (i, item) in items.indexed) {
       try {
         final json = item as Map<String, dynamic>;
         if (json['kind'] == 'server') {
-          _addons.add(
+          add(
             _serverAddon(
               ServerBackend.fromJson(json['server'] as Map<String, dynamic>),
             ),
@@ -164,9 +176,9 @@ class AddonStore extends ChangeNotifier {
         if (json['kind'] == 'extension') {
           final code =
               codes[i] ?? (throw StateError('No code for ${manifest.id}'));
-          _addons.add(_extension(manifest, code, json['updateUrl'] as String?));
+          add(_extension(manifest, code, json['updateUrl'] as String?));
         } else {
-          _addons.add(
+          add(
             InstalledAddon.remote(
               base: json['base'] as String,
               manifest: manifest,
@@ -174,10 +186,15 @@ class AddonStore extends ChangeNotifier {
           );
         }
       } on Object catch (e) {
-        debugPrint('Dropping unreadable addon: $e');
+        debugPrint('Keeping an unreadable addon as it is: $e');
+        _unreadable.add(item);
       }
     }
   }
+
+  /// Saved addons this version can't read (an extension whose code file is gone, say),
+  /// written back unchanged and first, so a readable copy of the same addon wins.
+  final List<Object?> _unreadable = [];
 
   /// The code of a saved extension entry, or null (not an extension, or unreadable).
   Future<String?> _codeOf(Object? item) async {
@@ -364,6 +381,7 @@ class AddonStore extends ChangeNotifier {
     await _prefs.setString(
       _key,
       jsonEncode([
+        ..._unreadable,
         for (final a in _addons)
           if (a.server case final server?)
             {'kind': 'server', 'server': server.toJson()}
@@ -484,14 +502,39 @@ String? updateSource(String? installedFrom, Object? declared) =>
     ? declared
     : installedFrom;
 
-/// Compares dotted versions numerically ("1.10.0" > "1.9.2").
+/// Compares dotted versions numerically ("1.10.0" > "1.9.2"), as semver orders them: a
+/// pre-release comes before its release ("1.0.0-beta.2" < "1.0.0"), a build ("+12") counts
+/// for nothing.
 int compareVersions(String a, String b) {
-  List<int> parts(String v) =>
-      v.split(RegExp(r'[.+-]')).map((p) => int.tryParse(p) ?? 0).toList();
-  final x = parts(a), y = parts(b);
+  (List<int>, List<String>?) parse(String v) {
+    final core = v.split('+').first;
+    final dash = core.indexOf('-');
+    final numbers = (dash < 0 ? core : core.substring(0, dash)).split('.');
+    return (
+      [for (final n in numbers) int.tryParse(n) ?? 0],
+      dash < 0 ? null : core.substring(dash + 1).split('.'),
+    );
+  }
+
+  final (x, xPre) = parse(a);
+  final (y, yPre) = parse(b);
   for (var i = 0; i < x.length || i < y.length; i++) {
     final d = (i < x.length ? x[i] : 0) - (i < y.length ? y[i] : 0);
     if (d != 0) return d.sign;
   }
-  return 0;
+  if (xPre == null || yPre == null) {
+    return xPre == yPre ? 0 : (xPre == null ? 1 : -1);
+  }
+  for (var i = 0; i < xPre.length && i < yPre.length; i++) {
+    final (p, q) = (int.tryParse(xPre[i]), int.tryParse(yPre[i]));
+    final d = p != null && q != null
+        ? p - q
+        : p != null
+        ? -1 // Numbers come before words.
+        : q != null
+        ? 1
+        : xPre[i].compareTo(yPre[i]);
+    if (d != 0) return d.sign;
+  }
+  return (xPre.length - yPre.length).sign;
 }

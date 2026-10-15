@@ -23,6 +23,9 @@ class ExtensionEngine {
   /// How long an engine stays up after its last call (tests shorten it).
   static Duration defaultIdleTimeout = const Duration(minutes: 2);
 
+  // shortcut: a call stuck in a synchronous JS loop keeps its isolate busy until the app exits
+  // (Isolate.kill waits for native code to return); stopping it needs a QuickJS interrupt
+  // handler, which flutter_js's prebuilt bridge doesn't set.
   static const _callTimeout = Duration(seconds: 60);
 
   final String id;

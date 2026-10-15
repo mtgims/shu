@@ -61,10 +61,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
               (_) => _saveProgress(notify: false, tick: true),
             )
           : null;
-      _chapterTimer?.cancel();
-      _chapterTimer = playing && _inFileChapters
-          ? Timer.periodic(const Duration(seconds: 1), (_) => _syncChapter())
-          : null;
+      _followChapters();
     });
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) _onChapterEnd();
@@ -227,6 +224,8 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       _links.clear();
     }
     _addon = addon;
+    // The book before may still be playing: its position must not move this one.
+    _chapterTimer?.cancel();
     current.value = entry;
     await _library.save(entry);
     await _loadChapter(play: true);
@@ -289,6 +288,16 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     final entry = current.value;
     return entry != null &&
         entry.book.chapters[entry.chapterIndex].file != null;
+  }
+
+  /// Checks the chapter every second while a file of several chapters plays. Called when
+  /// playing starts or stops and when a file opens: a book opened while another plays never
+  /// changes `playing`.
+  void _followChapters() {
+    _chapterTimer?.cancel();
+    _chapterTimer = _player.playing && _inFileChapters
+        ? Timer.periodic(const Duration(seconds: 1), (_) => _syncChapter())
+        : null;
   }
 
   /// Follows the position through chapters that share one file: the chapter shown, the lock
@@ -484,6 +493,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       }
       if (token != _loadToken) return;
       status.value = const PlayerStatus(PlayerPhase.ready);
+      _followChapters();
       // This version plays: no more falling back.
       _started = true;
       _retries = 0;

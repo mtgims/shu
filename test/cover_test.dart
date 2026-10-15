@@ -5,6 +5,8 @@ import 'package:audiobooks/widgets/cover.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../integration_test/temp_paths.dart';
+
 /// A PNG file of [width]×[height] in [dir], as a file: URL.
 Future<String> png(Directory dir, int width, int height) async {
   final recorder = ui.PictureRecorder();
@@ -59,5 +61,45 @@ void main() {
     await show(tester, Uri.file('${dir.path}/missing.png').toString());
     expect(find.byType(RawImage), findsNothing);
     expect(find.text('A Book'), findsOneWidget);
+  });
+
+  testWidgets('a web page served instead of a cover is not kept', (
+    tester,
+  ) async {
+    // Widget tests answer every request with 400 unless this is lifted.
+    HttpOverrides.global = null;
+    final root = useTempAppStorage();
+    addTearDown(() => root.delete(recursive: true));
+    var page = true;
+    final image = await tester.runAsync(
+      () async =>
+          File(Uri.parse(await png(dir, 50, 50)).toFilePath()).readAsBytes(),
+    );
+    final server = (await tester.runAsync(
+      () => HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+    ))!;
+    addTearDown(() => server.close(force: true));
+    server.listen((req) async {
+      if (page) {
+        req.response.headers.contentType = ContentType.html;
+        req.response.write('<html>Sign in to the Wi-Fi</html>');
+      } else {
+        req.response.headers.contentType = ContentType('image', 'png');
+        req.response.add(image!);
+      }
+      await req.response.close();
+    });
+    final url = 'http://127.0.0.1:${server.port}/cover.png';
+
+    await show(tester, url);
+    expect(find.byType(RawImage), findsNothing);
+    final covers = Directory('${root.path}/cache/covers');
+    expect(covers.listSync(), isEmpty);
+
+    page = false;
+    imageCache.clear();
+    await tester.pumpWidget(const SizedBox());
+    await show(tester, url);
+    expect(find.byType(RawImage), findsOneWidget);
   });
 }

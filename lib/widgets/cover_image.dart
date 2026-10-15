@@ -72,8 +72,13 @@ class CoverImage extends ImageProvider<CoverImage> {
     final res = await _http
         .get(Uri.parse(url))
         .timeout(const Duration(seconds: 20));
-    if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
-      throw StateError('Cover download failed (HTTP ${res.statusCode})');
+    // A page instead of a picture (a Wi-Fi login, an error in JSON) must not become the cover.
+    final type = (res.headers['content-type'] ?? '').toLowerCase();
+    if (res.statusCode != 200 ||
+        res.bodyBytes.isEmpty ||
+        type.startsWith('text/') ||
+        type.contains('json')) {
+      throw StateError('Cover download failed (HTTP ${res.statusCode} $type)');
     }
     final bytes = res.bodyBytes;
     // Written aside, then renamed: a write cut short must not become the cover for good.

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
 import '../addons/backend.dart';
@@ -79,22 +80,21 @@ abstract class ServerBackend implements AddonBackend {
       return server;
     }
 
-    final plain = serverAddress(address, kind);
-    // Before sending the password in the clear, try https where it is likely.
-    // shortcut: only falls back when https can't be reached at all; another site answering on
-    // https shows its error, and the user types http:// to get past it.
-    if (secureAddress(address) case final secure?) {
-      try {
-        return await at(secure);
-      } on Unreachable {
-        // No https there: plain http below.
-      }
+    // A domain name gets https only: falling back to http on any failure would let whoever
+    // blocks https read the password. The user types http:// to choose that.
+    final secure = secureAddress(address);
+    if (secure == null) return at(serverAddress(address, kind));
+    try {
+      return await at(secure);
+    } on Unreachable catch (e) {
+      throw Unreachable(
+        '${e.message}. If it has no https, type its address with http:// and its port.',
+      );
     }
-    return at(plain);
   }
 }
 
-/// For a bare domain name (`books.example.org`), the https address to try first: servers
+/// For a bare domain name (`books.example.org`), the https address to sign in at: servers
 /// reached by name usually sit behind an https proxy. Null for addresses on the local network,
 /// with a port, or with a scheme.
 Uri? secureAddress(String input) {
@@ -238,17 +238,19 @@ class SignedOut extends AddonException {
 /// Plain text from descriptions that may hold HTML.
 String? plainText(Object? value) {
   if (value is! String) return null;
-  final text = value
-      .replaceAll(RegExp(r'<br\s*/?>|</p>', caseSensitive: false), '\n')
-      .replaceAll(RegExp(r'<[^>]+>'), '')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-      .trim();
+  // Most descriptions are plain text: no parsing for them (lists hold hundreds).
+  final plain = !value.contains(RegExp('[<&]'))
+      ? value
+      : html_parser
+            .parseFragment(
+              value.replaceAll(
+                RegExp(r'<br\s*/?>|</p>', caseSensitive: false),
+                '\n',
+              ),
+            )
+            .text!
+            .replaceAll(' ', ' ');
+  final text = plain.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
   return text.isEmpty ? null : text;
 }
 

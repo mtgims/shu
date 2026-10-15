@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -172,12 +173,22 @@ class LibraryStore extends ChangeNotifier {
   LibraryStore(this._prefs) {
     final raw = _prefs.getString(_key);
     if (raw == null) return;
-    for (final item in jsonDecode(raw) as List) {
+    final List<Object?> items;
+    try {
+      items = jsonDecode(raw) as List;
+    } on Object catch (e) {
+      // Set aside rather than lost: the library starts again empty.
+      debugPrint('Unreadable library, kept as $_key.bad: $e');
+      unawaited(_prefs.setString('$_key.bad', raw));
+      return;
+    }
+    for (final item in items) {
       try {
         final entry = LibraryEntry.fromJson(item as Map<String, dynamic>);
         _entries[entry.key] = entry;
       } on Object catch (e) {
-        debugPrint('Dropping unreadable library entry: $e');
+        debugPrint('Keeping an unreadable library entry as it is: $e');
+        _unreadable.add(jsonEncode(item));
       }
     }
   }
@@ -185,6 +196,10 @@ class LibraryStore extends ChangeNotifier {
   static const _key = 'library';
   final SharedPreferences _prefs;
   final Map<String, LibraryEntry> _entries = {};
+
+  /// Entries this version can't read (saved by a newer one, say), written back unchanged.
+  /// They come first, so a readable copy of the same book wins when the list is read.
+  final List<String> _unreadable = [];
 
   /// Newest first; sorted again only after a change.
   List<LibraryEntry> get entries => _sorted ??= List.unmodifiable(
@@ -242,6 +257,6 @@ class LibraryStore extends ChangeNotifier {
 
   Future<void> _write() => _prefs.setString(
     _key,
-    '[${_entries.values.map((e) => e.encode()).join(',')}]',
+    '[${[..._unreadable, for (final e in _entries.values) e.encode()].join(',')}]',
   );
 }

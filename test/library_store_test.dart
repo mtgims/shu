@@ -186,4 +186,29 @@ void main() {
       'b2',
     ], reason: 'what was written reads back');
   });
+
+  test('an entry this version can\'t read is kept on the next save', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await LibraryStore(prefs).save(LibraryStore(prefs).entryFor('addon', book));
+    const unknown = {'book': 'from a newer version', 'addonId': 'addon'};
+    await prefs.setString(
+      'library',
+      '[${jsonEncode(unknown)},${prefs.getString('library')!.substring(1)}',
+    );
+
+    final store = LibraryStore(prefs);
+    expect(store.entries.map((e) => e.book.id), ['b1']);
+    await store.save(store.find('addon', 'b1')!);
+    final saved = jsonDecode(prefs.getString('library')!) as List;
+    expect(saved.first, unknown);
+    expect(LibraryStore(prefs).find('addon', 'b1'), isNotNull);
+  });
+
+  test('a damaged library is set aside, not lost', () async {
+    SharedPreferences.setMockInitialValues({'library': '[{"book":'});
+    final prefs = await SharedPreferences.getInstance();
+    expect(LibraryStore(prefs).entries, isEmpty);
+    await Future<void>.delayed(Duration.zero);
+    expect(prefs.getString('library.bad'), '[{"book":');
+  });
 }

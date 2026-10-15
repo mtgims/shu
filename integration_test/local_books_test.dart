@@ -36,6 +36,21 @@ Future<HttpServer> fakeAddon() async {
     '/book/marks.json': {
       'book': {'id': 'marks', 'title': 'Marks', 'chapters': chapters},
     },
+    // A book of one plain file, to switch from.
+    '/book/plain.json': {
+      'book': {
+        'id': 'plain',
+        'title': 'Plain',
+        'chapters': [
+          {'id': 'long', 'title': 'Whole'},
+        ],
+      },
+    },
+    '/sources/plain/long.json': {
+      'sources': [
+        {'id': 'direct', 'name': 'Direct', 'url': '$base/audio/long.wav'},
+      ],
+    },
     for (final c in chapters)
       '/sources/marks/${c['id']}.json': {
         'sources': [
@@ -129,6 +144,34 @@ void main() {
       await server.close(force: true);
     });
   });
+
+  testWidgets(
+    'follows chapters inside one file opened while another book plays',
+    (tester) async {
+      await tester.runAsync(() async {
+        final server = await fakeAddon();
+        final app = await createApp(systemControls: false);
+        final installed = await app.addons.install(
+          'http://127.0.0.1:${server.port}/manifest.json',
+        );
+        final addon = (installed as Installed).addon;
+        final player = app.player;
+
+        await player.openBook(addon, await addon.client.book('plain'));
+        await until(player, () => player.playing, 'playing the plain book');
+        // No pause in between: the player stays "playing" across the switch.
+        await player.openBook(addon, await addon.client.book('marks'));
+        await until(
+          player,
+          () => player.current.value!.chapterIndex == 1,
+          'second mark',
+        );
+
+        await player.stop();
+        await server.close(force: true);
+      });
+    },
+  );
 
   testWidgets('adds a folder of audio files as a book and plays it', (
     tester,

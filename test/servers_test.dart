@@ -42,7 +42,7 @@ void main() {
       );
     });
 
-    test('tries https first only for a bare domain name', () {
+    test('uses https only for a bare domain name', () {
       expect(
         secureAddress('books.example.org/abs/').toString(),
         'https://books.example.org/abs',
@@ -242,5 +242,21 @@ void main() {
         expect(book.chapters.map((c) => c.file).toSet(), {'m'});
       },
     );
+  });
+
+  test('descriptions come out as plain text, every entity decoded once', () {
+    expect(plainText('&amp;lt;b&amp;gt;'), '&lt;b&gt;');
+    expect(
+      plainText('It&#8217;s &mdash; &ldquo;good&rdquo; &#x27;'),
+      'It’s — “good” \'',
+    );
+    expect(
+      plainText('<p>One</p><p>Two&nbsp;<i>three</i></p>'),
+      'One\nTwo three',
+    );
+    expect(plainText('Line<br/>next'), 'Line\nnext');
+    expect(plainText('  Plain, no markup.  '), 'Plain, no markup.');
+    expect(plainText(' <p></p> '), isNull);
+    expect(plainText(42), isNull);
   });
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.2 - 2026-10-15
+
+### Changed
+- Signing in to a server by its domain name now only uses https. Before, when https failed, Shu
+  tried plain http, and anyone who could block https could then read the password. For a server
+  without https, type its address with http:// and its port
+
+### Fixed
+- A book or addon Shu can't read (saved by a newer version, or an extension whose file is gone)
+  is now kept as it is instead of disappearing at the next save, and a damaged list no longer
+  stops the app from starting: it is set aside and Shu starts with an empty one
+- Opening a book with chapters inside one file while another book was playing left the chapter
+  stuck on the first one until you paused and played again
+- A stable extension release now counts as newer than its beta, so it gets installed
+- Book descriptions from Audiobookshelf and Jellyfin show quotes, dashes and other special
+  characters properly
+- A web page served instead of a cover (like a Wi-Fi sign-in page) is no longer saved as that
+  cover
+
 ## 0.5.1 - 2026-10-15
 
 ### Changed
