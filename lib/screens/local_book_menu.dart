@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../addons/content_cache.dart';
 import '../app.dart';
 import '../sources/local_library.dart';
 import '../widgets/more_menu.dart';
@@ -82,6 +83,10 @@ class LocalBookMenu extends StatelessWidget {
       await scope.library.remove(entry);
     }
     await scope.addons.local.remove(book);
+    // Or a card still on screen would open the removed book from the cache.
+    if (scope.addons.byId(LocalBackend.id) case final local?) {
+      ContentCache.forgetBook(local, book.id);
+    }
     navigator.pop();
   }
 }

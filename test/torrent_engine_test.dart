@@ -61,6 +61,37 @@ void main() {
     },
   );
 
+  test('a magnet link gives its hash in hex, also from base32', () {
+    expect(TorrentEngine.magnetHash('magnet:?xt=urn:btih:$hash&dn=x'), hash);
+    expect(
+      TorrentEngine.magnetHash('magnet:?xt=urn:btih:${hash.toUpperCase()}'),
+      hash,
+    );
+    expect(
+      TorrentEngine.magnetHash(
+        'magnet:?xt=urn:btih:B5KITDOBXDSJ3FXDFATTO73FD2TMSNNP&dn=x',
+      ),
+      hash,
+    );
+    expect(
+      TorrentEngine.magnetHash(
+        'magnet:?xt=urn:btih:b5kitdobxdsj3fxdfatto73fd2tmsnnp',
+      ),
+      hash,
+    );
+    for (final bad in [
+      'https://example.org/a.torrent',
+      'magnet:?xt=urn:btih:${hash}00',
+      'magnet:?xt=urn:btih:B5KITDOBXDSJ3FXDFATTO73FD2TMSNN',
+    ]) {
+      expect(
+        () => TorrentEngine.magnetHash(bad),
+        throwsA(isA<AddonException>()),
+        reason: bad,
+      );
+    }
+  });
+
   test('without the engine program, playing says so', () async {
     await expectLater(
       engine().files('magnet:?xt=urn:btih:$hash', const TorrentOptions()),

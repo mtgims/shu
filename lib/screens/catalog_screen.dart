@@ -40,6 +40,10 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   final _books = <BookSummary>[];
+  final _scroll = ScrollController();
+
+  /// How many books the source has sent, counting the duplicates left out of [_books].
+  int _skip = 0;
   bool _hasMore = true;
   bool _loading = false;
   Object? _error;
@@ -48,6 +52,22 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void initState() {
     super.initState();
     _more();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Loads on when the books are near the end of the view; a page that doesn't fill a large
+  /// window gives no scrolling to wait for.
+  void _moreWhenShort() {
+    if (_error == null &&
+        _scroll.hasClients &&
+        _scroll.position.extentAfter < 800) {
+      _more();
+    }
   }
 
   Future<void> _more() async {
@@ -60,13 +80,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final page = await widget.addon.client.catalog(
         widget.catalog.id,
         genre: widget.genre,
-        skip: _books.length,
+        skip: _skip,
       );
       if (!mounted) return;
       final seen = {for (final b in _books) b.id};
       setState(() {
+        _skip += page.books.length;
         _books.addAll(page.books.where((b) => seen.add(b.id)));
         _hasMore = page.hasMore && page.books.isNotEmpty;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _moreWhenShort();
       });
     } on Object catch (e) {
       if (mounted) setState(() => _error = e);
@@ -82,12 +106,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
       bottomNavigationBar: const MiniPlayer(),
       appBar: AppBar(title: Text(widget.title)),
       body: NotificationListener<ScrollNotification>(
-        // Start the next page well before the end, so scrolling rarely stops.
+        // Start the next page well before the end, so scrolling rarely stops. After an error
+        // only "Try again" loads, so scrolling doesn't keep asking.
         onNotification: (n) {
-          if (n.metrics.extentAfter < 800) _more();
+          if (n.depth == 0) _moreWhenShort();
           return false;
         },
         child: CustomScrollView(
+          controller: _scroll,
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),

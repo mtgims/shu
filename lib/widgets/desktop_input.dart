@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../player/audiobook_player.dart';
+import 'focus_ring.dart';
+import 'keyboard_scroll.dart';
 
 /// Keys and mouse buttons that work on every page, as in desktop players: Space plays or pauses,
-/// ← and → skip back 15 s and forward 30 s, Esc, Alt+← and the mouse's back button go back,
-/// Ctrl+F searches.
+/// ← and → skip back 15 s and forward 30 s, ↑ ↓ Page Up/Down Home End scroll ([KeyboardScroll]),
+/// Esc, Alt+← and the mouse's back button go back,
+/// Ctrl+F searches, Ctrl+1 to Ctrl+4 open the tabs, and the keyboard's media keys play, pause and
+/// skip chapters.
 ///
 /// Space and the arrows act only when nothing in particular has the focus: in a text field they
 /// type and move the cursor, and on a control reached with Tab, Space presses it.
@@ -16,12 +20,16 @@ class DesktopInput extends StatefulWidget {
     required this.player,
     required this.navigator,
     required this.onSearch,
+    required this.onTab,
     required this.child,
   });
 
   final AudiobookPlayer player;
   final GlobalKey<NavigatorState> navigator;
   final VoidCallback onSearch;
+
+  /// Ctrl+1 to Ctrl+4: the main screen's tabs.
+  final void Function(int index) onTab;
   final Widget child;
 
   @override
@@ -70,6 +78,20 @@ class _DesktopInputState extends State<DesktopInput> {
           SingleActivator(LogicalKeyboardKey.escape): _Back(),
           SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): _Back(),
           SingleActivator(LogicalKeyboardKey.keyF, control: true): _Search(),
+          SingleActivator(LogicalKeyboardKey.digit1, control: true): _Tab(0),
+          SingleActivator(LogicalKeyboardKey.digit2, control: true): _Tab(1),
+          SingleActivator(LogicalKeyboardKey.digit3, control: true): _Tab(2),
+          SingleActivator(LogicalKeyboardKey.digit4, control: true): _Tab(3),
+          // Media keys work everywhere: no text field uses them.
+          SingleActivator(LogicalKeyboardKey.mediaPlayPause): _Media(
+            _Key.toggle,
+          ),
+          SingleActivator(LogicalKeyboardKey.mediaPlay): _Media(_Key.play),
+          SingleActivator(LogicalKeyboardKey.mediaPause): _Media(_Key.pause),
+          SingleActivator(LogicalKeyboardKey.mediaTrackNext): _Media(_Key.next),
+          SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): _Media(
+            _Key.previous,
+          ),
         },
         child: Actions(
           actions: {
@@ -84,8 +106,28 @@ class _DesktopInputState extends State<DesktopInput> {
             ),
             _Back: _KeyAction<_Back>(() => true, _back),
             _Search: _KeyAction<_Search>(() => true, widget.onSearch),
+            _Tab: CallbackAction<_Tab>(
+              onInvoke: (intent) => widget.onTab(intent.index),
+            ),
+            _Media: CallbackAction<_Media>(
+              onInvoke: (intent) => switch (intent.key) {
+                _Key.toggle => player.togglePlay(),
+                _Key.play => player.play(),
+                _Key.pause => player.pause(),
+                _Key.next => player.skipToNext(),
+                _Key.previous => player.skipToPrevious(),
+              },
+            ),
           },
-          child: Focus(focusNode: _focus, autofocus: true, child: widget.child),
+          child: Focus(
+            focusNode: _focus,
+            autofocus: true,
+            child: KeyboardScroll(
+              navigator: widget.navigator,
+              enabled: () => _free,
+              child: FocusRing(ignore: _focus, child: widget.child),
+            ),
+          ),
         ),
       ),
     );
@@ -127,4 +169,16 @@ class _KeyAction<T extends Intent> extends Action<T> {
     run();
     return null;
   }
+}
+
+enum _Key { toggle, play, pause, next, previous }
+
+class _Media extends Intent {
+  const _Media(this.key);
+  final _Key key;
+}
+
+class _Tab extends Intent {
+  const _Tab(this.index);
+  final int index;
 }

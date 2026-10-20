@@ -151,21 +151,34 @@ class NowPlayingScreen extends StatelessWidget {
       ),
     );
     if (!sidePane) return main;
-    return Row(
-      children: [
-        Expanded(child: main),
-        SizedBox(
-          width: 380,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: kToolbarHeight),
-              child: _AfterOpening(
-                child: MarksPane(player: player, entry: entry),
+    // The player and its chapters as one group in the middle, the chapters on a card next to
+    // the controls rather than against the window's far edge.
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120),
+        child: Row(
+          children: [
+            Expanded(child: main),
+            SizedBox(
+              width: 400,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, kToolbarHeight, 24, 24),
+                  // A Material, so the rows' hover and click marks show on the card.
+                  child: Material(
+                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(16),
+                    clipBehavior: Clip.antiAlias,
+                    child: _AfterOpening(
+                      child: MarksPane(player: player, entry: entry),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 

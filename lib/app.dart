@@ -43,6 +43,67 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
 final navigatorKey = GlobalKey<NavigatorState>();
 final homeShellKey = GlobalKey<HomeShellState>();
 
+/// The main screen's tab. The side rail, which in wide windows sits beside the pages rather
+/// than on the main screen, changes it too.
+final currentTab = ValueNotifier<int>(0);
+
+const _tabs = [
+  (label: 'Home', icon: Icons.home_outlined, selectedIcon: Icons.home),
+  (label: 'Search', icon: Icons.search, selectedIcon: Icons.search),
+  (
+    label: 'Library',
+    icon: Icons.headphones_outlined,
+    selectedIcon: Icons.headphones,
+  ),
+  (
+    label: 'Addons',
+    icon: Icons.extension_outlined,
+    selectedIcon: Icons.extension,
+  ),
+];
+
+/// Back to the main screen, on tab [index]. Not while a dialog is open: it may be busy, and
+/// closing it under its feet would make it close the page beneath when it ends.
+bool goToTab(int index) {
+  if (_dialogs.open.value != null) return false;
+  navigatorKey.currentState?.popUntil((route) => route.isFirst);
+  currentTab.value = index;
+  return true;
+}
+
+final _dialogs = _DialogObserver();
+
+/// Follows the dialogs and menus over the pages, so the side rail beside them can dim and stop
+/// taking clicks the way the pages under a dialog's barrier do.
+class _DialogObserver extends NavigatorObserver {
+  final _popups = <PopupRoute<dynamic>>[];
+
+  /// The barrier colour of the top dialog, or null when none is open.
+  final open = ValueNotifier<Color?>(null);
+
+  void _changed() => open.value = _popups.isEmpty
+      ? null
+      : _popups.last.barrierColor ?? Colors.transparent;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute) _popups.add(route);
+    _changed();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _popups.remove(route);
+    _changed();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _popups.remove(route);
+    _changed();
+  }
+}
+
 class AudiobooksApp extends StatelessWidget {
   const AudiobooksApp({
     super.key,
@@ -68,6 +129,7 @@ class AudiobooksApp extends StatelessWidget {
         title: 'Shu',
         scaffoldMessengerKey: messengerKey,
         navigatorKey: navigatorKey,
+        navigatorObservers: [_dialogs],
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
@@ -76,25 +138,69 @@ class AudiobooksApp extends StatelessWidget {
           player: player,
           navigator: navigatorKey,
           onSearch: () {
-            navigatorKey.currentState?.popUntil((route) => route.isFirst);
-            homeShellKey.currentState?.openSearch();
+            if (goToTab(1)) homeShellKey.currentState?.focusSearch();
           },
-          child: child!,
+          onTab: goToTab,
+          // Wide windows keep the rail beside every page, not only the main screen. The key
+          // keeps the pages when the window crosses the width.
+          child: Row(
+            children: [
+              if (isWide(context)) ...[
+                const _SideRail(),
+                const VerticalDivider(width: 1),
+              ],
+              Expanded(key: const ValueKey('pages'), child: child!),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Destination {
-  const _Destination(this.label, this.icon, this.selectedIcon, this.page);
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final Widget page;
+class _SideRail extends StatelessWidget {
+  const _SideRail();
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: _dialogs.open,
+    builder: (context, barrier, rail) => AbsorbPointer(
+      absorbing: barrier != null,
+      child: Stack(
+        children: [
+          rail!,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                color: barrier ?? Colors.transparent,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+    child: ValueListenableBuilder(
+      valueListenable: currentTab,
+      builder: (context, tab, _) => NavigationRail(
+        selectedIndex: tab,
+        onDestinationSelected: goToTab,
+        labelType: NavigationRailLabelType.all,
+        destinations: [
+          for (final t in _tabs)
+            NavigationRailDestination(
+              icon: Icon(t.icon),
+              selectedIcon: Icon(t.selectedIcon),
+              label: Text(t.label),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
-/// Bottom navigation on phones, a side rail on wide windows, the mini player above the content.
+/// Bottom navigation on phones (the side rail is beside the pages), the mini player above the
+/// content.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -103,15 +209,14 @@ class HomeShell extends StatefulWidget {
 }
 
 class HomeShellState extends State<HomeShell> {
-  int _index = 0;
   final _searchFocus = FocusNode(debugLabel: 'Search field');
 
-  void _select(int index) => setState(() => _index = index);
-
-  /// The Search tab with the cursor in its field (Ctrl+F).
-  void openSearch() {
-    _select(1);
-    _searchFocus.requestFocus();
+  /// The cursor into the search field once the Search tab shows (Ctrl+F).
+  void focusSearch() {
+    // A hidden tab can't take the focus: ask once Search is the tab shown.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _searchFocus.requestFocus(),
+    );
   }
 
   /// Saves the listening position whenever the app leaves the screen; the OS may end it there.
@@ -140,95 +245,57 @@ class HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
-  late final _destinations = [
-    _Destination('Home', Icons.home_outlined, Icons.home, const HomeScreen()),
-    _Destination(
-      'Search',
-      Icons.search,
-      Icons.search,
-      SearchScreen(focus: _searchFocus),
-    ),
-    const _Destination(
-      'Library',
-      Icons.headphones_outlined,
-      Icons.headphones,
-      LibraryScreen(),
-    ),
-    const _Destination(
-      'Addons',
-      Icons.extension_outlined,
-      Icons.extension,
-      AddonsScreen(),
-    ),
+  late final _pages = [
+    const HomeScreen(),
+    SearchScreen(focus: _searchFocus),
+    const LibraryScreen(),
+    const AddonsScreen(),
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final wide = isWide(context);
-    final body = Column(
-      children: [
-        Expanded(
-          child: IndexedStack(
-            index: _index,
-            children: [
-              for (final (i, d) in _destinations.indexed)
-                // Hidden tabs keep their state but not their animations: a spinner on a hidden
-                // tab would keep the app drawing frames.
-                TickerMode(enabled: i == _index, child: d.page),
-            ],
-          ),
-        ),
-        const MiniPlayer(),
-      ],
-    );
-
-    final Widget scaffold;
-    if (wide) {
-      scaffold = Scaffold(
-        body: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: _index,
-              onDestinationSelected: _select,
-              labelType: NavigationRailLabelType.all,
-              destinations: [
-                for (final d in _destinations)
-                  NavigationRailDestination(
-                    icon: Icon(d.icon),
-                    selectedIcon: Icon(d.selectedIcon),
-                    label: Text(d.label),
-                  ),
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: currentTab,
+    builder: (context, tab, _) {
+      final body = Column(
+        children: [
+          Expanded(
+            child: IndexedStack(
+              index: tab,
+              children: [
+                for (final (i, page) in _pages.indexed)
+                  // Hidden tabs keep their state but not their animations: a spinner on a
+                  // hidden tab would keep the app drawing frames.
+                  TickerMode(enabled: i == tab, child: page),
               ],
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: body),
-          ],
+          ),
+          const MiniPlayer(),
+        ],
+      );
+      // Android back: from another tab, go Home first instead of leaving the app.
+      return PopScope(
+        canPop: tab == 0,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) currentTab.value = 0;
+        },
+        child: Scaffold(
+          body: body,
+          bottomNavigationBar: isWide(context)
+              ? null
+              : NavigationBar(
+                  selectedIndex: tab,
+                  onDestinationSelected: (i) => currentTab.value = i,
+                  destinations: [
+                    for (final t in _tabs)
+                      NavigationDestination(
+                        icon: Icon(t.icon),
+                        selectedIcon: Icon(t.selectedIcon),
+                        label: t.label,
+                      ),
+                  ],
+                ),
         ),
       );
-    } else {
-      scaffold = Scaffold(
-        body: body,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: _select,
-          destinations: [
-            for (final d in _destinations)
-              NavigationDestination(
-                icon: Icon(d.icon),
-                selectedIcon: Icon(d.selectedIcon),
-                label: d.label,
-              ),
-          ],
-        ),
-      );
-    }
-    // Android back: from another tab, go Home first instead of leaving the app.
-    return PopScope(
-      canPop: _index == 0,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _select(0);
-      },
-      child: scaffold,
-    );
-  }
+    },
+  );
 }

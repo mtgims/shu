@@ -12,6 +12,10 @@ class _Section {
   final InstalledAddon addon;
   final CatalogInfo catalog;
   final Future<List<BookSummary>> results;
+
+  String get label => addon.manifest.catalogs.where((c) => c.search).length > 1
+      ? '${addon.manifest.name} · ${catalog.name}'
+      : addon.manifest.name;
 }
 
 /// Searches every search catalog of every installed addon at once.
@@ -28,6 +32,9 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final _controller = TextEditingController();
   List<_Section> _sections = [];
+
+  /// Sections that found nothing: named in one line at the end instead of each taking room.
+  final _empty = <_Section>{};
 
   void _search(String text) {
     final query = text.trim();
@@ -50,7 +57,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   .then((r) => r.books),
             ),
       ];
+      _empty.clear();
     });
+    for (final section in _sections) {
+      section.results.then(
+        (books) {
+          if (books.isEmpty && mounted && _sections.contains(section)) {
+            setState(() => _empty.add(section));
+          }
+        },
+        // The section shows its own error.
+        onError: (Object _) {},
+      );
+    }
   }
 
   @override
@@ -107,6 +126,19 @@ class _SearchScreenState extends State<SearchScreen> {
                       section: section,
                     ),
                   ),
+                if (_empty.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16 + side, 16, 16 + side, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: Text(
+                        'Nothing found in ${[for (final s in _sections)
+                          if (_empty.contains(s)) s.label].join(', ')}.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
               ],
             ),
@@ -121,14 +153,15 @@ class _SectionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label =
-        section.addon.manifest.catalogs.where((c) => c.search).length > 1
-        ? '${section.addon.manifest.name} · ${section.catalog.name}'
-        : section.addon.manifest.name;
+    final label = section.label;
     return FutureBuilder(
       future: section.results,
       builder: (context, snap) {
         final books = snap.data;
+        // Named in the line at the end instead.
+        if (books != null && books.isEmpty) {
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
+        }
         return SliverMainAxisGroup(
           slivers: [
             SliverToBoxAdapter(
@@ -155,13 +188,6 @@ class _SectionView extends StatelessWidget {
                 child: Padding(
                   padding: EdgeInsets.all(8),
                   child: LinearProgressIndicator(),
-                ),
-              )
-            else if (books.isEmpty)
-              const SliverToBoxAdapter(
-                child: ListTile(
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                  title: Text('Nothing found.'),
                 ),
               )
             else

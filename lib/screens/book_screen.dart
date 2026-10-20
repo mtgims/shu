@@ -47,6 +47,9 @@ class _BookScreenState extends State<BookScreen> {
   Future<List<BookSummary>>? _series;
   String? _sourceId;
   bool _expanded = false;
+
+  /// The header has scrolled away: the top bar shows the title instead.
+  bool _scrolled = false;
   bool _starting = false;
 
   /// A book from the library comes complete: shown at once, refreshed in the background.
@@ -206,6 +209,11 @@ class _BookScreenState extends State<BookScreen> {
       // Playback stays at hand on pages opened over the main screen.
       bottomNavigationBar: const MiniPlayer(),
       appBar: AppBar(
+        title: AnimatedOpacity(
+          opacity: _scrolled ? 1 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Text((widget.look ?? widget.summary).title),
+        ),
         actions: [
           if (widget.addon.isLocal)
             LocalBookMenu(
@@ -316,120 +324,154 @@ class _BookScreenState extends State<BookScreen> {
         ],
       ],
     );
-    // Side by side on wide screens, stacked on phones.
+    // Only what shows the player's place follows it (each pause, chapter or bookmark); the
+    // rest is built once per load. Chapters are built as they scroll into view.
+    final moves = Listenable.merge([scope.library, scope.player.current]);
+    final play = book == null
+        ? null
+        : ListenableBuilder(
+            listenable: moves,
+            builder: (_, _) {
+              if (book.isWork) return _workPlayButton(book);
+              final (entry, isCurrent) = _place(book);
+              return _playButton(book, entry, isCurrent);
+            },
+          );
+
+    // Side by side on wide screens, the play button under the title rather than a bar across
+    // the page; stacked on phones.
     final header = wide
         ? Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               cover,
               const SizedBox(width: 24),
-              Expanded(child: info),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    info,
+                    if (play != null) ...[
+                      const SizedBox(height: 16),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: play,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           )
         : Column(children: [cover, const SizedBox(height: 16), info]);
-
-    // Only what shows the player's place follows it (each pause, chapter or bookmark); the
-    // rest is built once per load. Chapters are built as they scroll into view.
-    final moves = Listenable.merge([scope.library, scope.player.current]);
     final chapters = book != null && !book.isWork ? book.chapters : null;
     return LayoutBuilder(
       builder: (context, box) {
         // A readable column of at most 860 px, centred.
         final side = math.max(16.0, (box.maxWidth - 860) / 2);
-        return CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: side),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    header,
-                    const SizedBox(height: 20),
-                    if (book == null)
-                      const LinearProgressIndicator()
-                    else if (book.isWork)
-                      ListenableBuilder(
-                        listenable: moves,
-                        builder: (_, _) => _workPlayButton(book),
-                      )
-                    else ...[
-                      ListenableBuilder(
-                        listenable: moves,
-                        builder: (_, _) {
-                          final (entry, isCurrent) = _place(book);
-                          return _playButton(book, entry, isCurrent);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _sourcePicker(),
-                    ],
-                    if (book?.description != null) ...[
-                      const SizedBox(height: 20),
-                      Text('About', style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 6),
-                      GestureDetector(
-                        onTap: () => setState(() => _expanded = !_expanded),
-                        child: Text(
-                          book!.description!,
-                          maxLines: _expanded ? null : 6,
-                          overflow: _expanded ? null : TextOverflow.fade,
-                        ),
-                      ),
-                    ],
-                    if (book != null && book.genres.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          for (final g in book.genres)
-                            Chip(
-                              label: Text(g),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (book != null && book.isWork) ...[
-                      const SizedBox(height: 20),
-                      Text('Versions', style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 4),
-                      VersionsList(
-                        versions: _versions,
-                        hasSources: scope.addons.addons.any(
-                          (a) => a.manifest.releases,
-                        ),
-                        onOpen: (v) => _openVersion(book, v),
-                      ),
-                      _SeriesRow(addon: widget.addon, books: _series),
-                    ],
-                    if (chapters != null) ...[
-                      const SizedBox(height: 20),
-                      Text('Chapters', style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 4),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            if (chapters != null)
+        return NotificationListener<ScrollUpdateNotification>(
+          // Rebuilds only when the header leaves or comes back, not on every pixel.
+          onNotification: (n) {
+            // The title goes under the top bar: beside the cover on wide screens, below it on
+            // phones.
+            final scrolled =
+                n.depth == 0 && n.metrics.pixels > (wide ? 24 : 240);
+            if (n.depth == 0 && scrolled != _scrolled) {
+              setState(() => _scrolled = scrolled);
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            slivers: [
               SliverPadding(
                 padding: EdgeInsets.symmetric(horizontal: side),
-                sliver: ListenableBuilder(
-                  listenable: moves,
-                  builder: (_, _) {
-                    final (entry, isCurrent) = _place(book!);
-                    return SliverList.builder(
-                      itemCount: chapters.length,
-                      itemBuilder: (_, i) =>
-                          _chapterTile(book, i, chapters[i], entry, isCurrent),
-                    );
-                  },
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      const SizedBox(height: 20),
+                      if (book == null)
+                        const LinearProgressIndicator()
+                      else ...[
+                        if (!wide) play!,
+                        if (!book.isWork) ...[
+                          if (!wide) const SizedBox(height: 12),
+                          _sourcePicker(),
+                        ],
+                      ],
+                      if (book?.description != null) ...[
+                        const SizedBox(height: 20),
+                        Text('About', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _expanded = !_expanded),
+                          child: Text(
+                            book!.description!,
+                            maxLines: _expanded ? null : 6,
+                            overflow: _expanded ? null : TextOverflow.fade,
+                          ),
+                        ),
+                      ],
+                      if (book != null && book.genres.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final g in book.genres)
+                              Chip(
+                                label: Text(g),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                          ],
+                        ),
+                      ],
+                      if (book != null && book.isWork) ...[
+                        const SizedBox(height: 20),
+                        Text('Versions', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        VersionsList(
+                          versions: _versions,
+                          hasSources: scope.addons.addons.any(
+                            (a) => a.manifest.releases,
+                          ),
+                          onOpen: (v) => _openVersion(book, v),
+                        ),
+                        _SeriesRow(addon: widget.addon, books: _series),
+                      ],
+                      if (chapters != null) ...[
+                        const SizedBox(height: 20),
+                        Text('Chapters', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
-          ],
+              if (chapters != null)
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: side),
+                  sliver: ListenableBuilder(
+                    listenable: moves,
+                    builder: (_, _) {
+                      final (entry, isCurrent) = _place(book!);
+                      return SliverList.builder(
+                        itemCount: chapters.length,
+                        itemBuilder: (_, i) => _chapterTile(
+                          book,
+                          i,
+                          chapters[i],
+                          entry,
+                          isCurrent,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          ),
         );
       },
     );

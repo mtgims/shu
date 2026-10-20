@@ -83,77 +83,81 @@ class _ConnectDialogState extends State<_ConnectDialog> {
   @override
   Widget build(BuildContext context) {
     final kind = widget.kind;
-    return AlertDialog(
-      title: Text(kind.label),
-      content: SizedBox(
-        width: 420,
-        child: AutofillGroup(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _address,
-                autofocus: widget.server == null,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'Server address',
-                  hintText: '192.168.1.10:${kind.defaultPort}',
-                  helperText:
-                      'As you open it in a browser, with https:// if it has it',
-                  helperMaxLines: 2,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _user,
-                autocorrect: false,
-                textInputAction: TextInputAction.next,
-                autofillHints: const [AutofillHints.username],
-                decoration: const InputDecoration(labelText: 'User name'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _password,
-                autofocus: widget.server != null,
-                obscureText: _hidden,
-                autocorrect: false,
-                enableSuggestions: false,
-                autofillHints: const [AutofillHints.password],
-                onSubmitted: (_) => _busy ? null : _signIn(),
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  errorText: _error,
-                  errorMaxLines: 4,
-                  suffixIcon: IconButton(
-                    tooltip: _hidden ? 'Show' : 'Hide',
-                    icon: Icon(
-                      _hidden ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () => setState(() => _hidden = !_hidden),
+    // Stays open while signing in: closing it then would make the end of it close the page
+    // beneath.
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        title: Text(kind.label),
+        content: SizedBox(
+          width: 420,
+          child: AutofillGroup(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _address,
+                  autofocus: widget.server == null,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: 'Server address',
+                    hintText: '192.168.1.10:${kind.defaultPort}',
+                    helperText: 'As you open it in a browser, with https:// if it has it',
+                    helperMaxLines: 2,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _user,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.username],
+                  decoration: const InputDecoration(labelText: 'User name'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _password,
+                  autofocus: widget.server != null,
+                  obscureText: _hidden,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  autofillHints: const [AutofillHints.password],
+                  onSubmitted: (_) => _busy ? null : _signIn(),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    errorText: _error,
+                    errorMaxLines: 4,
+                    suffixIcon: IconButton(
+                      tooltip: _hidden ? 'Show' : 'Hide',
+                      icon: Icon(
+                        _hidden ? Icons.visibility : Icons.visibility_off,
+                      ),
+                      onPressed: () => setState(() => _hidden = !_hidden),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _busy ? null : _signIn,
+            child: _busy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Sign in'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _signIn,
-          child: _busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Sign in'),
-        ),
-      ],
     );
   }
 }

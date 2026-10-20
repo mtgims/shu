@@ -162,7 +162,7 @@ class TorrentEngine {
     int index,
     TorrentOptions options,
   ) async {
-    final hash = _hashOf(magnet);
+    final hash = magnetHash(magnet);
     final file = (await files(magnet, options)).where((f) => f.index == index);
     if (file.isEmpty) throw AddonException('The torrent has no file $index.');
     final name = file.first.path.split('/').last;
@@ -357,7 +357,7 @@ class TorrentEngine {
 
   /// Adds [magnet] (again, harmlessly, when it is there already) with [options] applied.
   Future<String> _add(String magnet, TorrentOptions options) async {
-    final hash = _hashOf(magnet);
+    final hash = magnetHash(magnet);
     _inUse.add(hash);
     _idle?.cancel();
     final changed = options != _options;
@@ -378,12 +378,27 @@ class TorrentEngine {
     return hash;
   }
 
-  static String _hashOf(String magnet) =>
-      RegExp(r'xt=urn:btih:([0-9a-fA-F]{40})')
-          .firstMatch(magnet)
-          ?.group(1)
-          ?.toLowerCase() ??
-      (throw AddonException('Not a torrent link.'));
+  /// The info hash of [magnet] in lowercase hex, also when the link has it in base32.
+  @visibleForTesting
+  static String magnetHash(String magnet) {
+    final m = RegExp(
+      r'xt=urn:btih:([0-9a-fA-F]{40}|[A-Za-z2-7]{32})(?![0-9A-Za-z])',
+    ).firstMatch(magnet);
+    if (m == null) throw AddonException('Not a torrent link.');
+    final hash = m.group(1)!.toLowerCase();
+    if (hash.length == 40) return hash;
+    final out = StringBuffer();
+    var bits = 0, value = 0;
+    for (final c in hash.codeUnits) {
+      value = value << 5 | (c >= 0x61 ? c - 0x61 : c - 0x32 + 26);
+      bits += 5;
+      if (bits >= 8) {
+        bits -= 8;
+        out.write(((value >> bits) & 0xff).toRadixString(16).padLeft(2, '0'));
+      }
+    }
+    return out.toString();
+  }
 
   Future<Map<String, dynamic>> _torrents(Map<String, Object?> body) async =>
       (await _post('/torrents', body) as Map?)?.cast() ?? const {};

@@ -35,6 +35,35 @@ void main() {
     },
   );
 
+  test('numeric ids from an addon are read as text', () {
+    expect(CatalogInfo.fromJson({'id': 7}).id, '7');
+    expect(CatalogInfo.fromJson({'id': 7}).name, '7');
+    expect(BookSummary.fromJson({'id': 42, 'title': 'T'}).id, '42');
+  });
+
+  test('an addon\'s settings link is kept only when it is a web address', () {
+    String? link(String url) =>
+        Manifest.fromJson({'protocol': 1, 'id': 'a', 'configureUrl': url})
+            .configureUrl;
+    expect(
+      link('https://addon.example/configure'),
+      'https://addon.example/configure',
+    );
+    expect(
+      link('http://192.168.1.2:7000/configure'),
+      'http://192.168.1.2:7000/configure',
+    );
+    for (final bad in [
+      'tel:123',
+      'javascript:alert(1)',
+      'not a url',
+      'https://',
+      'file:///etc/passwd',
+    ]) {
+      expect(link(bad), isNull, reason: bad);
+    }
+  });
+
   test('a catalog book has no chapters and carries listening details', () {
     final work = Book.fromJson({
       'id': 'ol:OL82563W',

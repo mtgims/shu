@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../addons/addon_store.dart';
 import '../addons/models.dart';
 import '../app.dart';
+import '../widgets/adaptive.dart';
 
 /// The settings form an extension declares in its manifest. Changes save on their own.
 class ExtensionSettingsScreen extends StatefulWidget {
@@ -28,14 +29,16 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
   Timer? _saveTimer;
   bool _loaded = false;
 
+  // Kept from the start: the last save runs in dispose(), when context can no longer be used.
+  late AddonStore _store;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_loaded) return;
     _loaded = true;
-    _values = Map.of(
-      AppScope.of(context).addons.settingsOf(widget.addon.manifest),
-    );
+    _store = AppScope.of(context).addons;
+    _values = Map.of(_store.settingsOf(widget.addon.manifest));
     _hidden.addAll(
       widget.addon.manifest.settings
           .where((f) => f.type == 'password')
@@ -53,8 +56,7 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
     }
   }
 
-  void _save() =>
-      AppScope.of(context).addons.saveSettings(widget.addon, _values);
+  void _save() => _store.saveSettings(widget.addon, _values);
 
   @override
   void dispose() {
@@ -68,10 +70,12 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final fields = widget.addon.manifest.settings;
+    // A form, so narrower than the lists: fields this wide are hard to read across.
+    final side = 16 + readableInset(context, maxWidth: 720);
     return Scaffold(
       appBar: AppBar(title: Text(widget.addon.manifest.name)),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: EdgeInsets.fromLTRB(side, 8, side, 32),
         children: [
           Text(
             'Saved on this device only.',
@@ -231,8 +235,17 @@ class _ExtensionSettingsScreenState extends State<ExtensionSettingsScreen> {
                   )
                 : null,
           ),
+          // A half-typed number ("-") is marked and not saved: the last good one stays.
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          validator: (text) =>
+              number &&
+                  text!.trim().isNotEmpty &&
+                  num.tryParse(text.trim()) == null
+              ? 'Not a number'
+              : null,
           onChanged: (text) {
             final v = number ? num.tryParse(text.trim()) : text.trim();
+            if (number && v == null && text.trim().isNotEmpty) return;
             _set(f.key, v, debounce: true);
           },
         );

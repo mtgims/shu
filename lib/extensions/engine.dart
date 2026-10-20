@@ -70,8 +70,8 @@ class ExtensionEngine {
   }
 
   /// Reads an extension's manifest without starting an isolate (once, when installing).
-  static Map<String, dynamic> readManifest(String code, ExtensionHost host) =>
-      JsEngine.readManifest(code, host);
+  static Map<String, dynamic> readManifest(String code) =>
+      JsEngine.readManifest(code);
 
   Future<SendPort> _start() => _worker ??= () async {
     final inbox = _inbox = ReceivePort();

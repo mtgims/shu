@@ -164,18 +164,21 @@ Future<void> editBookmarkNote(
   AudiobookPlayer player,
   Mark mark,
 ) async {
-  final controller = TextEditingController(text: mark.note);
+  // No controller: disposing one when the dialog returns would be too early, while it still
+  // animates out.
+  var text = mark.note ?? '';
   final note = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Bookmark note'),
-      content: TextField(
-        controller: controller,
+      content: TextFormField(
+        initialValue: text,
+        onChanged: (value) => text = value,
         autofocus: true,
         maxLines: 3,
         minLines: 1,
         decoration: const InputDecoration(hintText: 'What happens here'),
-        onSubmitted: (text) => Navigator.of(context).pop(text),
+        onFieldSubmitted: (value) => Navigator.of(context).pop(value),
       ),
       actions: [
         TextButton(
@@ -183,12 +186,11 @@ Future<void> editBookmarkNote(
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text),
+          onPressed: () => Navigator.of(context).pop(text),
           child: const Text('Save'),
         ),
       ],
     ),
   );
-  controller.dispose();
   if (note != null) await player.changeBookmark(mark, mark.withNote(note));
 }

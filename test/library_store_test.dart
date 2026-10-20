@@ -89,6 +89,8 @@ void main() {
       chapters: [Chapter(id: '0', title: 'One')],
     );
     expect(store.entryFor('addon', shorter).chapterIndex, 0);
+    const none = Book(id: 'b1', title: 'Book', chapters: []);
+    expect(store.entryFor('addon', none).chapterIndex, 0);
   });
 
   test('entries are listed most recent first and can be removed', () async {

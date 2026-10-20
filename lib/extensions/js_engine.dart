@@ -68,9 +68,14 @@ class JsEngine {
     _rt?.evaluate('host.settings = ${jsonEncode(value)}');
   }
 
-  /// Reads an extension's manifest without keeping the engine.
-  static Map<String, dynamic> readManifest(String code, ExtensionHost host) {
-    final engine = JsEngine(id: '_probe', code: code, host: host);
+  /// Reads an extension's manifest without keeping the engine. The user hasn't accepted the
+  /// extension yet, so it can't go online.
+  static Map<String, dynamic> readManifest(String code) {
+    final engine = JsEngine(
+      id: '_probe',
+      code: code,
+      host: ExtensionHost(httpClient: _NoNetwork()),
+    );
     try {
       final rt = engine._start();
       final r = rt.evaluate(
@@ -257,4 +262,10 @@ var __atb = (function () {
   };
 })();
 ''';
+}
+
+class _NoNetwork extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      throw AddonException('Extensions can\'t go online while being read.');
 }

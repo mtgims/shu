@@ -305,7 +305,7 @@ class AddonStore extends ChangeNotifier {
     String? etag,
     Future<bool> Function(Manifest manifest)? accept,
   }) async {
-    final json = ExtensionEngine.readManifest(code, host);
+    final json = ExtensionEngine.readManifest(code);
     final manifest = Manifest.fromExtensionJson(json);
     if (!await _noticeAccepted(manifest, accept)) throw InstallCancelled();
     await _dir.create(recursive: true);
@@ -500,7 +500,7 @@ class AddonStore extends ChangeNotifier {
         await _prefs.setString(checkedKey, DateTime.now().toIso8601String());
         if (code.isEmpty) continue;
         final manifest = Manifest.fromExtensionJson(
-          ExtensionEngine.readManifest(code, host),
+          ExtensionEngine.readManifest(code),
         );
         if (manifest.id != addon.id ||
             compareVersions(manifest.version, addon.manifest.version) <= 0) {

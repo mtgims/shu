@@ -5,6 +5,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:audiobooks/app.dart' show currentTab;
 import 'package:audiobooks/main.dart';
 import 'package:audiobooks/screens/catalog_screen.dart';
 import 'package:audiobooks/widgets/book_tiles.dart';
@@ -141,8 +142,9 @@ void main() {
 
     // Home builds rows as they scroll into view; the genre row may be below the fold.
     await waitFor(tester, find.text('Popular'));
+    // hitTestable: built but below the window doesn't count.
     await tester.scrollUntilVisible(
-      find.widgetWithText(ActionChip, 'Mystery'),
+      find.widgetWithText(ActionChip, 'Mystery').hitTestable(),
       200,
       scrollable: find.byType(Scrollable).first,
     );
@@ -167,6 +169,21 @@ void main() {
     expect(find.textContaining('9 h 12 min'), findsOneWidget);
     await waitFor(tester, find.text('In this series'));
     await shot(tester, '06-book');
+    // Wide windows keep the side rail on pages opened over the main screen.
+    if (tester.view.physicalSize.width / tester.view.devicePixelRatio >= 760) {
+      expect(find.byType(NavigationRail), findsOneWidget);
+    }
+    // ↓ scrolls the page when nothing in particular has the focus.
+    final page = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    if (page.maxScrollExtent > 0) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await settle(tester, 500);
+      expect(page.pixels, greaterThan(0));
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      await settle(tester, 500);
+    }
 
     // Play: the version starts, with the catalog's title on it.
     await tap(tester, find.widgetWithText(FilledButton, 'Play'));
@@ -176,12 +193,29 @@ void main() {
     // Desktop keys: Space pauses from anywhere, Esc closes the player.
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await waitFor(tester, find.byIcon(Icons.play_arrow_rounded));
+    // The keyboard's Play/Pause key. The test can only send it as an Android key; the app
+    // sees the same logical key on every platform.
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.mediaPlayPause,
+      platform: 'android',
+    );
+    await waitFor(tester, find.byIcon(Icons.pause_rounded));
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.mediaPlayPause,
+      platform: 'android',
+    );
+    await waitFor(tester, find.byIcon(Icons.play_arrow_rounded));
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await settle(tester, 500);
     await shot(tester, '07b-player-bar');
     await back(tester);
 
-    await tap(tester, find.text('Search').last);
+    // Ctrl+F opens Search with the cursor in its field.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await settle(tester, 500);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Search field');
     await tester.enterText(find.byType(TextField), 'orchard');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await waitFor(tester, find.byType(BookListTile));
@@ -189,6 +223,8 @@ void main() {
 
     // "Restart": a fresh app on the same storage shows Home at once, the book in Continue
     // listening and in the mini player.
+    currentTab.value =
+        0; // a real restart is a new process, where it starts at Home
     final restarted = (await tester.runAsync(
       () => createApp(systemControls: false),
     ))!;

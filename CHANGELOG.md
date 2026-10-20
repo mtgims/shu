@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.6.1 - 2026-10-20
+
+### New
+- The keyboard scrolls pages: ↑ ↓, Page Up, Page Down, Home and End
+- The keyboard's media keys play, pause and skip chapters while Shu's window is in front.
+  On Windows they don't yet work from other windows
+- Ctrl+1 to Ctrl+4 open Home, Search, Library and Addons
+
+### Changed
+- An outline shows which control the keyboard is on. A click hides it again
+- In a wide window the side rail stays on every page, so you can switch tabs from a book
+- On a wide window the player shows its chapters on a card next to the controls, not at the
+  far edge
+- On a wide window a book's Play button sits next to the cover, and the book's title shows in
+  the top bar once you scroll down
+- Search lists only the addons that found something, and names the others in one line
+- Extension settings no longer stretch across a wide window
+- An extension can't go online while Shu reads it before installing, so nothing it does
+  happens before you accept it
+- An addon's Settings button only opens web pages
+- Android no longer backs up Shu's data or copies it to a new phone, because it holds your
+  server passwords. A new phone starts with an empty library
+
+### Fixed
+- Ctrl+F opened Search without putting the cursor in the search field
+- Magnet links that give the torrent's hash in the short (base32) form play now
+- Addons whose catalogs or books have numbers as ids show them instead of failing
+- Closing the add-extension or sign-in window while it was still working could also close
+  the page behind it. The window now stays open until it is done
+- A catalog page in a large window loads more books by itself when the first ones don't fill
+  it, and no longer stops at a page of books it already showed
+- After a catalog page fails to load, scrolling no longer retries over and over; "Try again"
+  does
+- A number setting of an extension that is half typed ("-") is marked instead of saved as
+  empty
+- A removed book could still open from a card that was on screen
+- Small errors when closing the bookmark note and extension settings
+
 ## 0.6.0 - 2026-10-15
 
 ### New

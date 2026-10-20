@@ -57,12 +57,15 @@ class AddonsScreen extends StatelessWidget {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
-                child: Text(
-                  'Nothing added yet. Tap Add to sign in to your Audiobookshelf or Jellyfin server, '
-                  'or to paste the link to an extension.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Text(
+                    'Nothing added yet. Use Add to sign in to your Audiobookshelf or Jellyfin '
+                    'server, or to paste the link to an extension.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ),
@@ -326,7 +329,7 @@ class _AddDialogState extends State<_AddDialog> {
     try {
       switch (await action(store)) {
         case Repository() && final repo:
-          setState(() => _repo = repo);
+          if (mounted) setState(() => _repo = repo);
         case Installed(:final addon):
           navigator.pop();
           messenger.showSnackBar(
@@ -406,8 +409,13 @@ class _AddDialogState extends State<_AddDialog> {
     );
   }
 
+  // Stays open while installing: closing it then would make the end of the install close the
+  // page beneath.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      PopScope(canPop: !_busy, child: _dialog());
+
+  Widget _dialog() {
     final repo = _repo;
     if (repo != null) {
       return AlertDialog(
@@ -418,7 +426,7 @@ class _AddDialogState extends State<_AddDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: _busy ? null : () => Navigator.pop(context),
             child: const Text('Close'),
           ),
         ],
@@ -446,7 +454,7 @@ class _AddDialogState extends State<_AddDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _busy ? null : () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         FilledButton(

@@ -1,5 +1,6 @@
 // Runs a small extension in the real JS engine: host.fetch, host.select, host.cache, settings,
-// errors, timeouts of nothing (event-driven), and shutdown when idle.
+// errors, timeouts of nothing (event-driven), shutdown when idle, and no network while reading
+// the manifest.
 import 'dart:convert';
 import 'dart:io';
 
@@ -62,7 +63,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await tester.runAsync(() async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var probes = 0;
       server.listen((req) async {
+        if (req.uri.path == '/probe') probes++;
         if (req.uri.path == '/echo') {
           req.response.write(await utf8.decoder.bind(req).join());
         } else {
@@ -73,6 +76,14 @@ void main() {
       });
       final base = 'http://127.0.0.1:${server.port}';
       ExtensionEngine.defaultIdleTimeout = const Duration(milliseconds: 500);
+
+      // Reading the manifest, before the user accepted anything, can't go online.
+      final manifest = ExtensionEngine.readManifest(
+        "host.fetch('$base/probe');\n${extensionCode(base)}",
+      );
+      expect(manifest['id'], 'test.engine');
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(probes, 0);
 
       final store = await AddonStore.load(
         await SharedPreferences.getInstance(),

@@ -9,6 +9,13 @@ String? _string(Object? value) =>
 
 int? _int(Object? value) => value is num ? value.toInt() : null;
 
+/// [value] when it is a web address: an addon's links are opened outside the app.
+String? _webUrl(Object? value) {
+  final uri = Uri.tryParse(_string(value) ?? '');
+  if (uri == null || uri.host.isEmpty) return null;
+  return uri.isScheme('https') || uri.isScheme('http') ? value as String : null;
+}
+
 class CatalogInfo {
   const CatalogInfo({
     required this.id,
@@ -27,8 +34,8 @@ class CatalogInfo {
   final List<String> genres;
 
   factory CatalogInfo.fromJson(Map<String, dynamic> json) => CatalogInfo(
-    id: json['id'] as String,
-    name: _string(json['name']) ?? json['id'] as String,
+    id: '${json['id']}',
+    name: _string(json['name']) ?? '${json['id']}',
     search: json['search'] == true,
     genres: _strings(json['genres']),
   );
@@ -168,7 +175,7 @@ class Manifest {
       version: _string(json['version']) ?? '?',
       description: _string(json['description']),
       logo: _string(json['logo']),
-      configureUrl: _string(json['configureUrl']),
+      configureUrl: _webUrl(json['configureUrl']),
       catalogs: (json['catalogs'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(CatalogInfo.fromJson)
@@ -226,7 +233,7 @@ class BookSummary {
   String get byline => authors.join(', ');
 
   factory BookSummary.fromJson(Map<String, dynamic> json) => BookSummary(
-    id: json['id'] as String,
+    id: '${json['id']}',
     title: _string(json['title']) ?? 'Untitled',
     authors: _strings(json['authors']),
     narrators: _strings(json['narrators']),

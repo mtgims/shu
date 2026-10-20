@@ -218,7 +218,10 @@ class LibraryStore extends ChangeNotifier {
     final entry = LibraryEntry(
       addonId: addonId,
       book: book,
-      chapterIndex: (old?.chapterIndex ?? 0).clamp(0, book.chapters.length - 1),
+      chapterIndex: (old?.chapterIndex ?? 0).clamp(
+        0,
+        book.chapters.isEmpty ? 0 : book.chapters.length - 1,
+      ),
       position: old?.position ?? Duration.zero,
       sourceId: old?.sourceId,
       finished: old?.finished ?? false,
