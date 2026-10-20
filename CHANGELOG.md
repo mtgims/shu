@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.2 - 2026-10-20
+
+### New
+- An extension update that comes with a new warning no longer gets skipped without a word:
+  Shu tells you, and the extension on the Addons page gets a "Review update" button that shows
+  the warning before installing
+
+### Fixed
+- After the torrent engine failed to start once, torrents didn't play again until Shu was
+  restarted
+- An extension can only keep torrents in a folder you picked in its settings
+- Extension ids may only have letters, digits, ".", "_" and "-"
+- Downloads of extensions and repositories stop at 8 MB, and a repository on the web can only
+  point to https links
+- An app update download that stops sending fails after a minute instead of waiting forever,
+  and doesn't leave half a file behind
+- Errors in the background checks at startup are caught, and links are left out of the log
+  (they can hold an addon's API key)
+
 ## 0.6.1 - 2026-10-20
 
 ### New

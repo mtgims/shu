@@ -124,17 +124,29 @@ class Updater {
     if (await dir.exists()) await dir.delete(recursive: true);
     await dir.create(recursive: true);
     final file = File('${dir.path}/shu-${update.version}.apk');
-    final res = await _http.send(http.Request('GET', update.apk!));
+    final res = await _http
+        .send(http.Request('GET', update.apk!))
+        .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
       throw HttpException('The download failed (HTTP ${res.statusCode}).');
     }
     final total = res.contentLength;
     var received = 0;
     final sink = file.openWrite();
-    await for (final chunk in res.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      if (total != null && total > 0) onProgress?.call(received / total);
+    try {
+      // A download that stops sending fails instead of hanging.
+      await for (final chunk in res.stream.timeout(
+        const Duration(seconds: 60),
+      )) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total != null && total > 0) onProgress?.call(received / total);
+      }
+    } on Object {
+      await sink.close().catchError((Object _) {});
+      // Half an APK is no use, and the next try starts over.
+      await file.delete().catchError((Object _) => file);
+      rethrow;
     }
     await sink.close();
     return await const MethodChannel('io.player.shu/update')

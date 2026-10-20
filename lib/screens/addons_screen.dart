@@ -173,47 +173,77 @@ class _AddonCard extends StatelessWidget {
                 ),
               ),
             ],
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (server != null)
-                  TextButton.icon(
-                    onPressed: () =>
-                        connectServer(context, server.kind, server: server),
-                    icon: const Icon(Icons.login),
-                    label: const Text('Sign in again'),
-                  )
-                else if (addon.isExtension && m.settings.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context)
-                            .push(ExtensionSettingsScreen.route(addon)),
-                    icon: const Icon(Icons.settings_outlined),
-                    label: const Text('Settings'),
-                  )
-                else if (m.configureUrl != null)
-                  TextButton.icon(
-                    onPressed: () => launchUrl(
-                      Uri.parse(m.configureUrl!),
-                      mode: LaunchMode.externalApplication,
+            // Wraps on a phone when an update waits beside Settings and Remove.
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                children: [
+                  if (AppScope.of(context).addons.waitingUpdate(addon)
+                      case final version?)
+                    TextButton.icon(
+                      onPressed: () => _reviewUpdate(context),
+                      icon: const Icon(Icons.system_update_alt),
+                      label: Text('Review update $version'),
                     ),
-                    icon: const Icon(Icons.settings_outlined),
-                    label: const Text('Settings'),
+                  if (server != null)
+                    TextButton.icon(
+                      onPressed: () =>
+                          connectServer(context, server.kind, server: server),
+                      icon: const Icon(Icons.login),
+                      label: const Text('Sign in again'),
+                    )
+                  else if (addon.isExtension && m.settings.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () =>
+                          Navigator.of(context)
+                              .push(ExtensionSettingsScreen.route(addon)),
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('Settings'),
+                    )
+                  else if (m.configureUrl != null)
+                    TextButton.icon(
+                      onPressed: () => launchUrl(
+                        Uri.parse(m.configureUrl!),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('Settings'),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => _confirmRemove(context),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Remove'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
                   ),
-                TextButton.icon(
-                  onPressed: () => _confirmRemove(context),
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Remove'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// The update whose notice changed: installed once the user accepts the new notice.
+  Future<void> _reviewUpdate(BuildContext context) async {
+    final store = AppScope.of(context).addons;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await store.reviewUpdate(
+        addon,
+        (m) async => context.mounted && await confirmNotice(context, m),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('Updated ${addon.manifest.name}')),
+      );
+    } on InstallCancelled {
+      // Declined: the update keeps waiting.
+    } on Object catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+    }
   }
 
   Future<void> _confirmRemove(BuildContext context) async {
@@ -349,26 +379,7 @@ class _AddDialogState extends State<_AddDialog> {
     }
   }
 
-  /// Shows an extension's notice; installing goes on only when the user accepts it.
-  Future<bool> _accept(Manifest manifest) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Before you install ${manifest.name}'),
-          content: SingleChildScrollView(child: Text(manifest.notice!)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('I understand'),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  Future<bool> _accept(Manifest manifest) => confirmNotice(context, manifest);
 
   void _install() =>
       _run((store) => store.install(_controller.text, accept: _accept));
@@ -470,3 +481,24 @@ class _AddDialogState extends State<_AddDialog> {
     );
   }
 }
+
+/// Shows an extension's notice; installing (or updating) goes on only when the user accepts it.
+Future<bool> confirmNotice(BuildContext context, Manifest manifest) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Before you install ${manifest.name}'),
+        content: SingleChildScrollView(child: Text(manifest.notice!)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('I understand'),
+          ),
+        ],
+      ),
+    ) ??
+    false;

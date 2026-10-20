@@ -136,4 +136,48 @@ void main() {
       await server.close(force: true);
     });
   });
+
+  testWidgets('an update with a new warning waits for the user', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.runAsync(() async {
+      String code(String version, String notice) =>
+          '''
+extension = {
+  manifest: { id: 'test.notice', name: 'Notice test', version: '$version', notice: '$notice',
+    catalogs: [] },
+  async catalog() { return { books: [], hasMore: false }; },
+};
+''';
+      final store = await AddonStore.load(
+        await SharedPreferences.getInstance(),
+      );
+      final file = File('${Directory.systemTemp.createTempSync().path}/n.js')
+        ..writeAsStringSync(code('1.0.0', 'First warning'));
+      await store.install(file.path, accept: (_) async => true);
+
+      // Same warning: updates on its own.
+      file.writeAsStringSync(code('1.1.0', 'First warning'));
+      final quiet = await store.checkUpdates(force: true);
+      expect(quiet.updated, ['Notice test 1.1.0']);
+      expect(quiet.waiting, isEmpty);
+
+      // A new warning: nothing installs until the user accepts it.
+      file.writeAsStringSync(code('2.0.0', 'Second warning'));
+      final asked = await store.checkUpdates(force: true);
+      expect(asked.updated, isEmpty);
+      final addon = store.byId('test.notice')!;
+      expect(asked.waiting, [addon]);
+      expect(addon.manifest.version, '1.1.0');
+      expect(store.waitingUpdate(addon), '2.0.0');
+
+      await store.reviewUpdate(addon, (m) async {
+        expect(m.notice, 'Second warning');
+        return true;
+      });
+      expect(store.byId('test.notice')!.manifest.version, '2.0.0');
+      expect(store.waitingUpdate(addon), isNull);
+    });
+  });
 }

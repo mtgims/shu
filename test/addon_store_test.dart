@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:audiobooks/addons/addon_store.dart';
+import 'package:audiobooks/addons/backend.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -117,6 +118,51 @@ void main() {
       final store = await AddonStore.load(prefs);
       expect(store.addons.where((a) => !a.isLocal), isEmpty);
       expect(prefs.getString('addons.bad'), '[{"kind":');
+    });
+  });
+
+  group('installing from a file', () {
+    late Directory root;
+    late AddonStore store;
+    setUp(() async {
+      root = useTempAppStorage();
+      SharedPreferences.setMockInitialValues({});
+      store = await AddonStore.load(await SharedPreferences.getInstance());
+    });
+    tearDown(() => root.delete(recursive: true));
+
+    test('a repository keeps https links and links like its own', () async {
+      final index = File('${root.path}/index.json')
+        ..writeAsStringSync(
+          jsonEncode({
+            'name': 'Mine',
+            'extensions': [
+              {'name': 'Web', 'url': 'https://example.org/web.js'},
+              {'name': 'Here', 'url': 'here.js'},
+              {'name': 'Plain', 'url': 'http://example.org/plain.js'},
+              {'name': 'Elsewhere', 'url': 'file:///etc/passwd.js'},
+            ],
+          }),
+        );
+      final repo = await store.install(index.path) as Repository;
+      expect(repo.entries.map((e) => e.name), ['Web', 'Here', 'Elsewhere']);
+      // A file index may point at files: it is already on this device.
+      expect(repo.entries[1].url, Uri.file('${root.path}/here.js').toString());
+    });
+
+    test('a file too big to be an extension is refused', () async {
+      final big = File('${root.path}/big.js')
+        ..writeAsBytesSync(List.filled((8 << 20) + 1, 0x20));
+      await expectLater(
+        store.install(big.path),
+        throwsA(
+          isA<AddonException>().having(
+            (e) => e.message,
+            'message',
+            contains('too big'),
+          ),
+        ),
+      );
     });
   });
 }

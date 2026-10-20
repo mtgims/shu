@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -225,6 +227,7 @@ class AddonStore extends ChangeNotifier {
       code: code,
       host: host,
       settings: settingsOf(manifest),
+      folders: () => _pickedFolders(manifest),
     ),
   );
 
@@ -332,28 +335,37 @@ class AddonStore extends ChangeNotifier {
     Manifest manifest,
     Future<bool> Function(Manifest manifest)? accept,
   ) async {
-    final notice = manifest.notice;
-    if (notice == null) return true;
-    final key = 'ext.notice.${manifest.id}';
-    if (_prefs.getString(key) == notice) return true;
+    if (_noticeKnown(manifest)) return true;
     if (accept == null || !await accept(manifest)) return false;
-    await _prefs.setString(key, notice);
+    await _prefs.setString('ext.notice.${manifest.id}', manifest.notice!);
     return true;
   }
+
+  /// No notice, or the very one the user accepted before.
+  bool _noticeKnown(Manifest manifest) =>
+      manifest.notice == null ||
+      _prefs.getString('ext.notice.${manifest.id}') == manifest.notice;
 
   Repository _repository(Uri index, Map<String, dynamic> json) =>
       Repository(json['name'] as String? ?? index.host, [
         for (final e
             in (json['extensions'] as List).whereType<Map<String, dynamic>>())
-          if (e['url'] is String)
-            RepoEntry(
-              id: e['id'] as String?,
-              name: e['name'] as String? ?? e['id'] as String? ?? '?',
-              url: index.resolve(e['url'] as String).toString(),
-              version: e['version'] as String?,
-              description: e['description'] as String?,
-            ),
+          // Links over https, or the way the index itself came (a repository on this device
+          // or the local network): an https one can't send installs to plain http or a file.
+          if (e['url'] case final String url)
+            if (index.resolve(url) case final link
+                when link.isScheme('https') || link.scheme == index.scheme)
+              RepoEntry(
+                id: e['id'] as String?,
+                name: e['name'] as String? ?? e['id'] as String? ?? '?',
+                url: link.toString(),
+                version: e['version'] as String?,
+                description: e['description'] as String?,
+              ),
       ]);
+
+  /// Extensions and repository indexes are small: anything bigger isn't one.
+  static const _maxDownload = 8 << 20;
 
   Future<(String, String?)> _download(Uri uri, {String? etag}) async {
     if (uri.isScheme('file')) {
@@ -361,22 +373,42 @@ class AddonStore extends ChangeNotifier {
       if (!await file.exists()) {
         throw AddonException('No file at ${file.path}.');
       }
+      if (await file.length() > _maxDownload) {
+        throw AddonException('${file.path} is too big to be an extension.');
+      }
       return (await file.readAsString(), null);
     }
-    final http.Response res;
+    const timeout = Duration(seconds: 30);
+    final http.StreamedResponse res;
     try {
       res = await _http
-          .get(uri, headers: {'if-none-match': ?etag})
-          .timeout(const Duration(seconds: 30));
+          .send(
+            http.Request('GET', uri)..headers.addAll({'if-none-match': ?etag}),
+          )
+          .timeout(timeout);
     } on Object catch (e) {
       throw AddonException('Could not reach ${uri.host}: $e');
     }
-    if (res.statusCode == 304) return ('', etag);
-    if (res.statusCode >= 400) {
+    if (res.statusCode == 304 || res.statusCode >= 400) {
+      unawaited(res.stream.drain<void>().catchError((Object _) {}));
+      if (res.statusCode == 304) return ('', etag);
       throw AddonException('${uri.host} answered HTTP ${res.statusCode}.');
     }
+    final body = BytesBuilder(copy: false);
+    try {
+      await for (final chunk in res.stream.timeout(timeout)) {
+        body.add(chunk);
+        if (body.length > _maxDownload) {
+          throw AddonException('${uri.host} sent too much to be an extension.');
+        }
+      }
+    } on AddonException {
+      rethrow;
+    } on Object catch (e) {
+      throw AddonException('Could not reach ${uri.host}: $e');
+    }
     return (
-      utf8.decode(res.bodyBytes, allowMalformed: true),
+      utf8.decode(body.takeBytes(), allowMalformed: true),
       res.headers['etag'],
     );
   }
@@ -444,6 +476,20 @@ class AddonStore extends ChangeNotifier {
     };
   }
 
+  /// What the user picked for [manifest]'s folder settings: saved values only, never the
+  /// defaults its manifest suggests.
+  Iterable<String> _pickedFolders(Manifest manifest) {
+    final raw = _prefs.getString('ext.settings.${manifest.id}');
+    final saved = raw == null
+        ? const {}
+        : jsonDecode(raw) as Map<String, dynamic>;
+    return [
+      for (final f in manifest.settings)
+        if (f.type == 'folder' && saved[f.key] is String)
+          saved[f.key] as String,
+    ];
+  }
+
   Future<void> saveSettings(
     InstalledAddon addon,
     Map<String, Object?> settings,
@@ -474,11 +520,31 @@ class AddonStore extends ChangeNotifier {
     }
   }
 
+  /// Versions of extensions waiting for the user to accept a changed notice, by id. Found again
+  /// by the next check, so not saved.
+  final _waiting = <String, String>{};
+
+  /// The version of [addon] that waits for the user's OK, if any.
+  String? waitingUpdate(InstalledAddon addon) => _waiting[addon.id];
+
+  /// Installs the waiting update of [addon] once [accept] says yes to its notice.
+  Future<void> reviewUpdate(
+    InstalledAddon addon,
+    Future<bool> Function(Manifest manifest) accept,
+  ) async {
+    await install(addon.updateUrl!, accept: accept);
+    if (_waiting.remove(addon.id) != null) notifyListeners();
+  }
+
   /// Updates extensions whose last check is older than a day. A check without changes costs one
-  /// small request (the server answers 304 to the stored ETag). Returns the updated names.
-  Future<List<String>> checkUpdates({bool force = false}) async {
+  /// small request (the server answers 304 to the stored ETag). An update whose notice changed
+  /// waits for the user instead ([waitingUpdate]). Returns the updated names and those waiting.
+  Future<({List<String> updated, List<InstalledAddon> waiting})> checkUpdates({
+    bool force = false,
+  }) async {
     await _refreshServers(force: force);
     final updated = <String>[];
+    final waiting = <InstalledAddon>[];
     for (final addon in [
       ..._addons.where(
         (a) =>
@@ -506,13 +572,19 @@ class AddonStore extends ChangeNotifier {
             compareVersions(manifest.version, addon.manifest.version) <= 0) {
           continue;
         }
+        if (!_noticeKnown(manifest)) {
+          _waiting[addon.id] = manifest.version;
+          waiting.add(addon);
+          notifyListeners();
+          continue;
+        }
         await installExtension(code, updateUrl: addon.updateUrl, etag: etag);
         updated.add('${manifest.name} ${manifest.version}');
       } on Object catch (e) {
         debugPrint('Update check for ${addon.id} failed: $e');
       }
     }
-    return updated;
+    return (updated: updated, waiting: waiting);
   }
 }
 

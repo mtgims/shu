@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart';
+
 import '../addons/backend.dart';
 import 'host.dart';
 import 'js_engine.dart';
@@ -17,6 +19,7 @@ class ExtensionEngine {
     required this.code,
     required this.host,
     this.settings = const {},
+    this.folders,
     Duration? idleTimeout,
   }) : idleTimeout = idleTimeout ?? defaultIdleTimeout;
 
@@ -37,6 +40,38 @@ class ExtensionEngine {
 
   /// The user's settings, visible to the extension as `host.settings`.
   Map<String, Object?> settings;
+
+  /// The folders the user picked in this extension's settings: the only ones its torrents may
+  /// be saved in.
+  final Iterable<String> Function()? folders;
+
+  /// [args] of a torrent call with its options' folder left out unless the user picked it: an
+  /// extension can't choose where on the device its downloads go. Shu's own folder is used then.
+  @visibleForTesting
+  static List<Object?> checkTorrentFolder(
+    String op,
+    List<Object?> args,
+    Iterable<String> allowed,
+  ) {
+    final at = switch (op) {
+      'torrentFiles' => 1,
+      'torrentStream' => 2,
+      _ => -1,
+    };
+    final options = at >= 0 ? args.elementAtOrNull(at) : null;
+    if (options is! Map) return args;
+    final folder = options['folder'];
+    if (folder is! String ||
+        folder.trim().isEmpty ||
+        allowed.map((f) => f.trim()).contains(folder.trim())) {
+      return args;
+    }
+    debugPrint('A torrent folder the user did not pick was left out.');
+    return [
+      for (final (i, a) in args.indexed)
+        i == at ? ({...options}..remove('folder')) : a,
+    ];
+  }
 
   Future<SendPort>? _worker;
   ReceivePort? _inbox;
@@ -84,7 +119,10 @@ class ExtensionEngine {
           final worker = _worker;
           unawaited(
             host
-                .run(op, args)
+                .run(
+                  op,
+                  checkTorrentFolder(op, args, folders?.call() ?? const []),
+                )
                 .then(
                   (value) async =>
                       (await worker)?.send(('app', ask, true, value)),

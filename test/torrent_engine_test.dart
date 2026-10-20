@@ -92,6 +92,28 @@ void main() {
     }
   });
 
+  test('a start that failed is tried again on the next call', () async {
+    var tries = 0;
+    final e = TorrentEngine(
+      prefs,
+      binary: () async {
+        if (tries++ == 0) throw const FileSystemException('disk gone');
+        return null;
+      },
+    );
+    final magnet = 'magnet:?xt=urn:btih:$hash';
+    await expectLater(
+      e.files(magnet, const TorrentOptions()),
+      throwsA(isA<FileSystemException>()),
+    );
+    // Not the first error again: the start ran a second time.
+    await expectLater(
+      e.files(magnet, const TorrentOptions()),
+      throwsA(isA<AddonException>()),
+    );
+    expect(tries, 2);
+  });
+
   test('without the engine program, playing says so', () async {
     await expectLater(
       engine().files('magnet:?xt=urn:btih:$hash', const TorrentOptions()),

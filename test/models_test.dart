@@ -35,6 +35,18 @@ void main() {
     },
   );
 
+  test('extension ids are limited to plain names', () {
+    Manifest ext(String id) =>
+        Manifest.fromExtensionJson({'id': id, 'version': '1'});
+    expect(
+      ext('community.audiobook-catalog').id,
+      'community.audiobook-catalog',
+    );
+    for (final bad in ['a:b', 'a/b', 'a b', '../x', 'x' * 65]) {
+      expect(() => ext(bad), throwsFormatException, reason: bad);
+    }
+  });
+
   test('numeric ids from an addon are read as text', () {
     expect(CatalogInfo.fromJson({'id': 7}).id, '7');
     expect(CatalogInfo.fromJson({'id': 7}).name, '7');

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -19,17 +20,49 @@ import 'widgets/cover_image.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Last resort for errors nothing caught, so they show up in the log.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Unexpected error: ${withoutLinks(error)}\n$stack');
+    return true;
+  };
   final app = await createApp();
   runApp(app);
   // Off the startup path: cover cache upkeep, and extension updates (at most one small request
   // per extension a day).
-  Future.delayed(const Duration(seconds: 30), CoverImage.trim);
+  Future.delayed(const Duration(seconds: 30), () async {
+    try {
+      await CoverImage.trim();
+    } on Object catch (e) {
+      debugPrint('Cover cache upkeep failed: ${withoutLinks(e)}');
+    }
+  });
   Future.delayed(const Duration(seconds: 15), () async {
-    final updated = await app.addons.checkUpdates();
-    if (updated.isEmpty) return;
-    messengerKey.currentState?.showSnackBar(
-      SnackBar(content: Text('Updated ${updated.join(', ')}')),
-    );
+    try {
+      final (:updated, :waiting) = await app.addons.checkUpdates();
+      final messenger = messengerKey.currentState;
+      if (updated.isNotEmpty) {
+        messenger?.showSnackBar(
+          SnackBar(content: Text('Updated ${updated.join(', ')}')),
+        );
+      }
+      if (waiting.isNotEmpty) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              waiting.length == 1
+                  ? 'An update of ${waiting.single.manifest.name} needs your OK'
+                  : 'Updates of ${waiting.map((a) => a.manifest.name).join(', ')} need your OK',
+            ),
+            action: SnackBarAction(
+              label: 'Review',
+              onPressed: () => goToTab(3),
+            ),
+          ),
+        );
+      }
+    } on Object catch (e) {
+      debugPrint('Extension update check failed: ${withoutLinks(e)}');
+    }
   });
   // A newer Shu on the releases page: at most one small request a day.
   Future.delayed(const Duration(seconds: 20), () async {
@@ -37,7 +70,7 @@ Future<void> main() async {
       final update = await app.updater.check();
       if (update != null) offerUpdate(app.updater, update);
     } on Object catch (e) {
-      debugPrint('Update check failed: $e');
+      debugPrint('Update check failed: ${withoutLinks(e)}');
     }
   });
 }
@@ -107,3 +140,10 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
     updater: Updater(prefs),
   );
 }
+
+/// [error]'s text with its links left out: they can hold an addon's API key.
+@visibleForTesting
+String withoutLinks(Object error) => '$error'.replaceAll(
+  RegExp(r'[a-z][a-z0-9+.-]*://\S+', caseSensitive: false),
+  '<link>',
+);

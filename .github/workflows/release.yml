@@ -24,8 +24,8 @@ jobs:
     if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -66,7 +66,7 @@ jobs:
     if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.4
@@ -86,7 +86,7 @@ jobs:
     if: github.event_name == 'release' # a manual run only builds the AppImage
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.4
@@ -108,11 +108,11 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       # The packaging files come from this workflow's commit: an older tag may not have them.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: packaging
           sparse-checkout: |

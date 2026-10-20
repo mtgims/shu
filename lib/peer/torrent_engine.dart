@@ -416,10 +416,20 @@ class TorrentEngine {
     return res.body.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
   }
 
-  Future<Uri> _start() => _base ??= () async {
+  Future<Uri> _start() {
+    if (_base case final running?) return running;
+    late final Future<Uri> start;
+    start = _launch().catchError((Object e, StackTrace s) {
+      // A start that failed in any way is not kept: the next call tries again.
+      if (identical(_base, start)) _base = null;
+      Error.throwWithStackTrace(e, s);
+    });
+    return _base = start;
+  }
+
+  Future<Uri> _launch() async {
     final binary = await _findBinary();
     if (binary == null) {
-      _base = null;
       throw AddonException('This build of Shu can\'t play torrents.');
     }
     // A copy left running by a crash answers on its old port: it is asked to stop.
@@ -480,7 +490,6 @@ class TorrentEngine {
       }
       if (DateTime.now().isAfter(end) || _process == null) {
         process.kill();
-        _base = null;
         throw AddonException('The torrent engine did not start.');
       }
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -489,7 +498,7 @@ class TorrentEngine {
     await _applySettings();
     unawaited(_cleanUp(_options));
     return base;
-  }();
+  }
 
   /// TorrServer's settings from [_options]; everything else it does on the network beyond
   /// torrents (announcing itself on the LAN) is turned off.

@@ -137,6 +137,12 @@ class Manifest {
   factory Manifest.fromExtensionJson(Map<String, dynamic> json) {
     final id = _string(json['id']);
     if (id == null) throw const FormatException('The extension has no id.');
+    // Ids name its cache entries ("id:key") and settings: nothing that could reach another's.
+    if (!RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(id)) {
+      throw const FormatException(
+        'The extension\'s id may only have letters, digits, ".", "_" and "-".',
+      );
+    }
     return Manifest(
       id: id,
       name: _string(json['name']) ?? id,
