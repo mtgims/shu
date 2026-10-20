@@ -31,6 +31,8 @@ server, and can be extended with small JavaScript extensions.
 - Chapters, bookmarks, speed from 0.5× to 3×, 15/30 second skips, and a step back after a pause
 - A sleep timer that fades out, with +5 minutes from the notification or a shake
 - Background playback with lock screen controls and Android Auto on Android, media keys on Linux
+- Keyboard use on Linux and Windows: Space plays and pauses, ← and → skip, ↑ ↓ and Page Up/Down
+  scroll, Ctrl+F searches and Ctrl+1 to Ctrl+4 open the tabs
 
 macOS and iOS builds are set up but haven't been tested yet.
 
@@ -86,7 +88,8 @@ and copy the address. It looks like
 `https://raw.githubusercontent.com/<user>/<repo>/main/index.json`.
 
 If an extension has settings, they open right after installing it. Settings stay on your device.
-Installed extensions update themselves; the app checks once a day.
+Installed extensions update themselves; the app checks once a day. An update that comes with a
+new warning waits for you: **Review update** on the Addons page shows it before installing.
 
 There are two kinds of extensions:
 

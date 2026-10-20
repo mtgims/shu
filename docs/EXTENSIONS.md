@@ -17,7 +17,7 @@ The file assigns a global `extension`:
 ```js
 extension = {
   manifest: {
-    id: 'example.audiobooks',      // unique, stable
+    id: 'example.audiobooks',      // unique, stable: letters, digits, ".", "_", "-" (64 at most)
     name: 'Example',
     version: '1.2.0',              // semver; the app updates when this grows
     description: '…',
@@ -51,10 +51,12 @@ passes it back to `extension.resolve()` when the user plays that source.
 
 Setting types: `text`, `password`, `toggle`, `number`, `select`, `multiselect`, `folder` (a
 folder the user picks on this device and the app can write to; empty means the default).
+`host.torrent` saves only in a folder the user picked in one of these.
 
 A `notice` is shown before installing, with **I understand** and **Cancel**, and again at the
 top of the settings. Once accepted, updates install quietly while the text stays the same; an
-update that changes it waits until the user installs it by hand and accepts the new text.
+update that changes it waits: the Addons page offers **Review update**, which shows the new text
+and installs only once the user accepts it.
 
 Every catalog without `search` is a row on Home, with **See all** opening it as a grid that
 pages with `skip` while `hasMore` is true. A catalog with `genres` shows as a row of genre
@@ -95,7 +97,8 @@ Extensions come in two kinds, and one extension can be both:
 
 `host.torrent` (Shu 0.6.0 and later; check it exists) plays torrents in the app itself, through
 TorrServer running on this device. Its `options` say how to keep what is downloaded, and the
-latest call's apply: `folder` (a path, or empty for the app's own), `deleteWhenFinished` (when
+latest call's apply: `folder` (a path the user picked in one of the extension's `folder`
+settings, or empty for the app's own; any other path is ignored), `deleteWhenFinished` (when
 the user finishes the book or removes it from the library), `keepDays` (null keeps them),
 `storageLimit` (bytes, 0 for none), `downloadLimit` and `uploadLimit` (bytes a second, 0 for
 none) and `shareAfter` (keep sharing while the app is open). An extension using it should carry
@@ -128,4 +131,6 @@ extensions, or to give users one link that never changes, publish an `index.json
 ```
 
 `url` is relative to the index. The app remembers where each extension came from and checks it
-once a day; raise `manifest.version` and users get the new file on their next check.
+once a day; raise `manifest.version` and users get the new file on their next check. An index
+on the web may only link to https addresses (relative ones resolve against it). Files over 8 MB
+are refused.
