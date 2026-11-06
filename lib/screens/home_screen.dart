@@ -5,10 +5,12 @@ import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
+import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 import 'add_books.dart';
 import 'addons_screen.dart';
 import 'catalog_screen.dart';
+import 'continue_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,7 +27,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Shu')),
+      // Wide windows have the name at the top of the side rail.
+      appBar: isWide(context) ? null : AppBar(title: const Text('Shu')),
       body: ListenableBuilder(
         // Progress (saved on every pause and chapter) only changes "Continue listening", which
         // follows the library itself; the rows are rebuilt when addons or local books change.
@@ -91,7 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// The books in progress, newest first; nothing when there are none.
+/// The books in progress, newest first; nothing when there are none. The book in the mini player
+/// isn't repeated here. With none loaded, the newest is a large card to go on with in one tap.
 class _ContinueListening extends StatelessWidget {
   const _ContinueListening();
 
@@ -99,30 +103,57 @@ class _ContinueListening extends StatelessWidget {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     return ListenableBuilder(
-      listenable: scope.library,
+      listenable: Listenable.merge([scope.library, scope.player.current]),
       builder: (context, _) {
+        final playing = scope.player.current.value?.key;
         final entries = scope.library.entries
-            .where((e) => !e.finished)
+            .where((e) => !e.finished && e.started && e.key != playing)
             .take(12)
             .toList();
-        return entries.isEmpty
-            ? const SizedBox.shrink()
-            : _row(context, entries);
+        if (entries.isEmpty) return const SizedBox.shrink();
+        if (playing != null) {
+          return _row(context, entries, title: 'Continue listening');
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: ContinueCard(entry: entries.first),
+              ),
+            ),
+            if (entries.length > 1)
+              _row(
+                context,
+                entries.skip(1).toList(),
+                title: 'More in progress',
+              ),
+          ],
+        );
       },
     );
   }
 
-  Widget _row(BuildContext context, List<LibraryEntry> entries) {
+  Widget _row(
+    BuildContext context,
+    List<LibraryEntry> entries, {
+    required String title,
+  }) {
     final scope = AppScope.of(context);
+    final speed = scope.player.settings.speed;
     return CardRow(
-      title: 'Continue listening',
+      title: title,
       children: [
         for (final entry in entries)
           BookCard(
             title: entry.book.title,
-            subtitle: entry.book.chapters.length > 1
-                ? 'Chapter ${entry.chapterIndex + 1} of ${entry.book.chapters.length}'
-                : entry.book.byline,
+            subtitle:
+                timeLeftText(entry, speed) ??
+                (entry.book.chapters.length > 1
+                    ? 'Chapter ${entry.chapterIndex + 1} of ${entry.book.chapters.length}'
+                    : entry.book.byline),
             cover: entry.book.cover,
             progress: entry.progress,
             onTap: () {

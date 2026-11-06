@@ -19,11 +19,17 @@ class MoreMenu extends StatelessWidget {
 }
 
 /// A menu item that removes something, in the error color.
-Widget removeItem(BuildContext context, String label, VoidCallback onPressed) =>
-    MenuItemButton(
-      style: MenuItemButton.styleFrom(
-        foregroundColor: Theme.of(context).colorScheme.error,
-      ),
-      onPressed: onPressed,
-      child: Text(label),
-    );
+Widget removeItem(
+  BuildContext context,
+  String label,
+  VoidCallback onPressed, {
+  IconData? icon,
+}) => MenuItemButton(
+  style: MenuItemButton.styleFrom(
+    foregroundColor: Theme.of(context).colorScheme.error,
+    iconColor: Theme.of(context).colorScheme.error,
+  ),
+  leadingIcon: icon == null ? null : Icon(icon),
+  onPressed: onPressed,
+  child: Text(label),
+);

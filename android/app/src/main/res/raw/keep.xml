@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only referenced from Dart (AudioServiceConfig, the sleep timer button), so the resource shrinker can't see it. -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@drawable/ic_stat_shu,@drawable/ic_sleep_add" />
+<!-- Only referenced by name from Dart (AudioServiceConfig, the notification's buttons), so the
+     resource shrinker can't see them. Without audio_service's button icons Android refuses the
+     playback state, and the notification, lock screen and quick settings controls all go. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_shu,@drawable/ic_sleep_add,@drawable/audio_service_*" />

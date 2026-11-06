@@ -217,45 +217,58 @@ class PlayerExtras extends StatelessWidget {
 void showAudioSettings(BuildContext context, PlayerSettings settings) {
   showPanel<void>(
     context,
+    // Taller than a bottom sheet's usual half screen, and scrolling on small phones: the
+    // last switches were cut off.
+    scrollControlled: true,
     builder: (context) => SafeArea(
       child: ListenableBuilder(
         listenable: settings,
-        builder: (context, _) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SwitchListTile(
-              title: const Text('Step back after a pause'),
-              subtitle: const Text('A few seconds, more after a long break'),
-              value: settings.autoRewind,
-              onChanged: (on) => settings.autoRewind = on,
-            ),
-            if (PlayerSettings.hasAudioEffects) ...[
+        builder: (context, _) => SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               SwitchListTile(
-                title: const Text('Skip silence'),
-                subtitle: const Text('Shortens long pauses in the reading'),
-                value: settings.skipSilence,
-                onChanged: (on) => settings.skipSilence = on,
+                title: const Text('Step back after a pause'),
+                subtitle: const Text('A few seconds, more after a long break'),
+                value: settings.autoRewind,
+                onChanged: (on) => settings.autoRewind = on,
               ),
               SwitchListTile(
-                title: const Text('Voice boost'),
-                subtitle: const Text('Louder, for quiet recordings'),
-                value: settings.voiceBoost,
-                onChanged: (on) => settings.voiceBoost = on,
+                title: const Text('Remember where you left each chapter'),
+                subtitle: const Text(
+                  'Going back to a chapter goes on from there, not from its start',
+                ),
+                value: settings.rememberChapterPlaces,
+                onChanged: (on) => settings.rememberChapterPlaces = on,
               ),
+              if (PlayerSettings.hasAudioEffects) ...[
+                SwitchListTile(
+                  title: const Text('Skip silence'),
+                  subtitle: const Text('Shortens long pauses in the reading'),
+                  value: settings.skipSilence,
+                  onChanged: (on) => settings.skipSilence = on,
+                ),
+                SwitchListTile(
+                  title: const Text('Voice boost'),
+                  subtitle: const Text('Louder, for quiet recordings'),
+                  value: settings.voiceBoost,
+                  onChanged: (on) => settings.voiceBoost = on,
+                ),
+              ],
+              SwitchListTile(
+                title: const Text('Fade out at the end of the sleep timer'),
+                value: settings.sleepFade,
+                onChanged: (on) => settings.sleepFade = on,
+              ),
+              if (PlayerSettings.hasShake)
+                SwitchListTile(
+                  title: const Text('Shake to add 5 minutes'),
+                  subtitle: const Text("In the sleep timer's last 2 minutes"),
+                  value: settings.shakeToExtend,
+                  onChanged: (on) => settings.shakeToExtend = on,
+                ),
             ],
-            SwitchListTile(
-              title: const Text('Fade out at the end of the sleep timer'),
-              value: settings.sleepFade,
-              onChanged: (on) => settings.sleepFade = on,
-            ),
-            if (PlayerSettings.hasShake)
-              SwitchListTile(
-                title: const Text('Shake to add 5 minutes'),
-                subtitle: const Text("In the sleep timer's last 2 minutes"),
-                value: settings.shakeToExtend,
-                onChanged: (on) => settings.shakeToExtend = on,
-              ),
-          ],
+          ),
         ),
       ),
     ),

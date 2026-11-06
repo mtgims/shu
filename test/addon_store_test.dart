@@ -150,6 +150,27 @@ void main() {
       expect(repo.entries[1].url, Uri.file('${root.path}/here.js').toString());
     });
 
+    test(
+      'a repository opened once is remembered, newest first, until forgotten',
+      () async {
+        File write(String name, String title) => File('${root.path}/$name')
+          ..writeAsStringSync(jsonEncode({'name': title, 'extensions': []}));
+        final a = write('a.json', 'First');
+        final b = write('b.json', 'Second');
+        await store.install(a.path);
+        await store.install(b.path);
+        await store.install(a.path);
+        expect(store.repositories.map((r) => r.name), ['First', 'Second']);
+        // Kept across a restart.
+        final again = await AddonStore.load(
+          await SharedPreferences.getInstance(),
+        );
+        expect(again.repositories.first.url, Uri.file(a.path).toString());
+        await store.forgetRepository(Uri.file(a.path).toString());
+        expect(store.repositories.map((r) => r.name), ['Second']);
+      },
+    );
+
     test('a file too big to be an extension is refused', () async {
       final big = File('${root.path}/big.js')
         ..writeAsBytesSync(List.filled((8 << 20) + 1, 0x20));

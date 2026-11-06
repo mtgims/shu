@@ -171,32 +171,37 @@ class _GeneratedCover extends StatelessWidget {
           final small = box.maxWidth < 90;
           final padding = small ? 6.0 : 12.0;
           final iconSize = small ? 14.0 : 22.0;
-          final fontSize = small ? 9.0 : 15.0;
+          // The title grows with the cover, so a big one reads like a book cover.
+          final fontSize = small ? 9.0 : (box.maxWidth * 0.1).clamp(15.0, 28.0);
           // As many title lines as fit under the icon, at most five.
           final lines =
               ((box.maxHeight - 2 * padding - iconSize - 4) / (fontSize * 1.15))
                   .floor()
                   .clamp(1, 5);
+          // The mark at the top and the title at the bottom, laid over each other rather than
+          // stacked in a column: a cover resized as it flies into the player can't overflow.
           return Padding(
             padding: EdgeInsets.all(padding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
                 Icon(
                   Icons.headphones,
                   color: const Color(0xFFE8B04A),
                   size: iconSize,
                 ),
-                const Spacer(),
-                Text(
-                  title,
-                  maxLines: lines,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: const Color(0xFFF4EFE6),
-                    fontWeight: FontWeight.w700,
-                    fontSize: fontSize,
-                    height: 1.15,
+                Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text(
+                    title,
+                    maxLines: lines,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Literata',
+                      color: const Color(0xFFF4EFE6),
+                      fontWeight: FontWeight.w600,
+                      fontSize: fontSize,
+                      height: 1.15,
+                    ),
                   ),
                 ),
               ],

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../addons/models.dart';
+import '../sources/progress.dart';
 
 /// A book the user has started, with where they stopped.
 class LibraryEntry {
@@ -19,9 +20,11 @@ class LibraryEntry {
     DateTime? updatedAt,
     List<Mark>? bookmarks,
     List<Mark>? history,
+    Map<int, Duration>? chapterPlaces,
   }) : updatedAt = updatedAt ?? DateTime.now(),
        bookmarks = bookmarks ?? [],
-       history = history ?? [];
+       history = history ?? [],
+       chapterPlaces = chapterPlaces ?? {};
 
   final String addonId;
   final Book book;
@@ -43,6 +46,10 @@ class LibraryEntry {
   final List<Mark> history;
   static const historyLength = 10;
 
+  /// Where the user left chapters they jumped away from before their end (chapter index to
+  /// position in its file), to go on from there when they come back.
+  final Map<int, Duration> chapterPlaces;
+
   /// Adds [mark] to the front of the history, dropping the oldest beyond [historyLength].
   void remember(Mark mark) {
     history.insert(0, mark);
@@ -57,22 +64,49 @@ class LibraryEntry {
     createdAt: DateTime.now(),
   );
 
+  /// Played at all: a book only downloaded so far is not.
+  bool get started => finished || chapterIndex > 0 || position > Duration.zero;
+
   String get key => keyOf(addonId, book.id);
   static String keyOf(String addonId, String bookId) => '$addonId|$bookId';
 
-  double get progress {
+  double get progress => progressAt(position);
+
+  /// How far into the book [at] (a position in the current chapter's file) is, 0 to 1. By time
+  /// when every chapter's length is known, otherwise by chapters. [chapterLength] stands in for a
+  /// current chapter of unknown length (the player knows its file's).
+  double progressAt(Duration at, {Duration? chapterLength}) {
     if (finished) return 1;
     if (book.chapters.isEmpty) return 0;
+    final left = timeLeftAt(at);
+    final total = bookLength(book);
+    if (left != null && total > Duration.zero) {
+      return (1 - left.inMilliseconds / total.inMilliseconds).clamp(0, 1);
+    }
     final chapter = book.chapters[chapterIndex];
     // A single file of unknown length: the catalog's length stands in.
     final seconds =
         chapter.duration ??
+        chapterLength?.inSeconds ??
         (book.chapters.length == 1 ? (book.durationMinutes ?? 0) * 60 : 0);
-    final into = position - (chapter.start ?? Duration.zero);
+    final into = at - (chapter.start ?? Duration.zero);
     final part = seconds > 0 ? (into.inSeconds / seconds).clamp(0, 1) : 0;
     return ((chapterIndex + part) / book.chapters.length)
         .clamp(0, 1)
         .toDouble();
+  }
+
+  /// What is left of the book from [at] (a position in the current chapter's file), at normal
+  /// speed; null unless every chapter's length is known.
+  Duration? timeLeftAt(Duration at) {
+    if (finished) return Duration.zero;
+    if (book.chapters.isEmpty || book.chapters.any((c) => c.duration == null)) {
+      return null;
+    }
+    final left =
+        bookLength(book) -
+        bookTime(book, (chapterIndex: chapterIndex, position: at));
+    return left.isNegative ? Duration.zero : left;
   }
 
   Map<String, dynamic> toJson() => {'book': book.toJson(), ..._place()};
@@ -95,6 +129,20 @@ class LibraryEntry {
     if (bookmarks.isNotEmpty)
       'bookmarks': [for (final m in bookmarks) m.toJson()],
     if (history.isNotEmpty) 'history': [for (final m in history) m.toJson()],
+    if (chapterPlaces.isNotEmpty)
+      'chapterPlaces': {
+        for (final MapEntry(:key, :value) in chapterPlaces.entries)
+          '$key': value.inMilliseconds,
+      },
+  };
+
+  /// [chapterPlaces] as saved, leaving out what doesn't fit [book] (or isn't readable).
+  static Map<int, Duration> placesFrom(Object? json, Book book) => {
+    if (json is Map)
+      for (final MapEntry(:key, :value) in json.entries)
+        if (int.tryParse('$key') case final i?
+            when i >= 0 && i < book.chapters.length && value is num)
+          i: Duration(milliseconds: value.toInt()),
   };
 
   static LibraryEntry fromJson(Map<String, dynamic> json) {
@@ -115,6 +163,7 @@ class LibraryEntry {
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
       bookmarks: Mark.listFrom(json['bookmarks'], book),
       history: Mark.listFrom(json['history'], book),
+      chapterPlaces: placesFrom(json['chapterPlaces'], book),
     );
   }
 }
@@ -228,6 +277,11 @@ class LibraryStore extends ChangeNotifier {
       workKey: workKey ?? old?.workKey,
       bookmarks: old?.bookmarks.where((m) => m.fits(book)).toList(),
       history: old?.history.where((m) => m.fits(book)).toList(),
+      chapterPlaces: {
+        for (final MapEntry(:key, :value)
+            in old?.chapterPlaces.entries ?? <MapEntry<int, Duration>>[])
+          if (key < book.chapters.length) key: value,
+      },
     );
     _entries[key] = entry;
     _sorted = null;

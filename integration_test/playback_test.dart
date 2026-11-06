@@ -15,9 +15,16 @@ import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'example_extensions.dart';
+import 'temp_paths.dart';
 
 /// Serves the addon protocol for one book with two chapters.
-Future<HttpServer> fakeAddon({double seconds = 2}) async {
+/// [cover] and [chapterLengths] (seconds) are only for screenshots: a cover with colours, and
+/// chapters whose lengths are known.
+Future<HttpServer> fakeAddon({
+  double seconds = 2,
+  String? cover,
+  bool chapterLengths = false,
+}) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final base = 'http://127.0.0.1:${server.port}';
   final audio = toneWav(seconds: seconds);
@@ -38,9 +45,18 @@ Future<HttpServer> fakeAddon({double seconds = 2}) async {
         'id': 'tones',
         'title': 'Two Tones',
         'authors': ['Test'],
+        'cover': ?cover,
         'chapters': [
-          {'id': 'a', 'title': 'First tone'},
-          {'id': 'b', 'title': 'Second tone'},
+          {
+            'id': 'a',
+            'title': 'First tone',
+            if (chapterLengths) 'duration': seconds.round(),
+          },
+          {
+            'id': 'b',
+            'title': 'Second tone',
+            if (chapterLengths) 'duration': seconds.round(),
+          },
         ],
       },
     },
@@ -247,8 +263,89 @@ void main() {
         'playing from where it was',
       );
 
+      // Each chapter goes on where it was left: away to chapter 2 and back.
+      await player.seek(const Duration(seconds: 8));
+      await player.playChapter(1);
+      await until(
+        () => player.current.value!.chapterIndex == 1,
+        'second chapter again',
+      );
+      expect(
+        saved().chapterPlaces[0]!.inMilliseconds,
+        closeTo(8000, 500),
+        reason: 'playback moves on a little after the seek',
+      );
+      await player.playChapter(0);
+      await until(
+        () =>
+            player.status.value.phase == PlayerPhase.ready &&
+            (player.position - const Duration(seconds: 8)).abs() <
+                const Duration(seconds: 1),
+        'first chapter where it was left',
+      );
+      // With the setting off, a chapter starts over.
+      player.settings.rememberChapterPlaces = false;
+      await player.seek(const Duration(seconds: 8));
+      await player.playChapter(1);
+      await until(
+        () =>
+            player.current.value!.chapterIndex == 1 &&
+            player.status.value.phase == PlayerPhase.ready,
+        'second chapter, setting off',
+      );
+      expect(saved().chapterPlaces, isEmpty);
+      await player.playChapter(0);
+      await until(
+        () =>
+            player.current.value!.chapterIndex == 0 &&
+            player.status.value.phase == PlayerPhase.ready &&
+            player.position > const Duration(milliseconds: 300) &&
+            player.position < const Duration(seconds: 3),
+        'first chapter from its start',
+      );
+
       await player.stop();
       await server.close(force: true);
     });
+  });
+
+  testWidgets('a downloaded book plays without its server', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = useTempAppStorage();
+    await tester.runAsync(() async {
+      final server = await fakeAddon();
+      final app = await createApp(systemControls: false);
+      final installed = await app.addons.install(
+        'http://127.0.0.1:${server.port}/manifest.json',
+      );
+      final addon = (installed as Installed).addon;
+      final player = app.player;
+      Future<void> until(bool Function() ok, String what) async {
+        final end = DateTime.now().add(const Duration(seconds: 30));
+        while (!ok()) {
+          if (DateTime.now().isAfter(end)) fail('Timed out: $what');
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+
+      await app.downloads.add(addon, await addon.client.book('tones'));
+      final key = LibraryEntry.keyOf('test.tones', 'tones');
+      await until(() => app.downloads.isDownloaded(key), 'downloaded');
+      await server.close(force: true);
+
+      await player.resume(app.library.find('test.tones', 'tones')!);
+      await until(
+        () =>
+            player.current.value?.chapterIndex == 1 &&
+            player.status.value.phase == PlayerPhase.ready,
+        'second chapter plays',
+      );
+      await until(
+        () => app.library.find('test.tones', 'tones')?.finished == true,
+        'book finished',
+      );
+      await player.stop();
+    });
+    storage.deleteSync(recursive: true);
   });
 }

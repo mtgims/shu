@@ -146,4 +146,17 @@ void main() {
       isFalse,
     );
   });
+
+  test('a series answer says where the book sits, when it knows', () {
+    final books = [
+      {'id': '1', 'title': 'One'},
+      {'id': '3', 'title': 'Three'},
+    ];
+    final known = seriesFromJson({'books': books, 'at': 1});
+    expect(known.books.map((b) => b.title), ['One', 'Three']);
+    expect(known.at, 1);
+    expect(seriesFromJson({'books': books}).at, isNull);
+    expect(seriesFromJson({'books': books, 'at': -1}).at, isNull);
+    expect(seriesFromJson({'books': books, 'at': 'x'}).at, isNull);
+  });
 }

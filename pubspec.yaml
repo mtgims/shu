@@ -1,7 +1,7 @@
 name: audiobooks
 description: "Audiobook player with JavaScript extensions."
 publish_to: 'none'
-version: 0.6.2+16
+version: 0.7.0+17
 
 environment:
   sdk: ^3.13.3
@@ -9,7 +9,9 @@ environment:
 dependencies:
   audio_metadata_reader: ^1.8.0
   audio_service: ^0.18.19
-  audio_service_mpris: ^0.2.1
+  audio_service_mpris:
+    # A copy that tells desktops more (name, speed, seeks), see third_party/README.md.
+    path: third_party/audio_service_mpris
   file_picker: ^13.1.0
   flutter:
     sdk: flutter
@@ -42,3 +44,11 @@ flutter:
   # Shown under About: what's new in this version.
   assets:
     - CHANGELOG.md
+  # Book titles. Literata (SIL Open Font License, assets/fonts/OFL.txt), cut to two weights
+  # and Latin letters; other scripts fall back to the system font.
+  fonts:
+    - family: Literata
+      fonts:
+        - asset: assets/fonts/Literata-Regular.ttf
+        - asset: assets/fonts/Literata-SemiBold.ttf
+          weight: 600

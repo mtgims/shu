@@ -385,7 +385,7 @@ class LocalBackend implements AddonBackend {
   Future<List<BookSummary>> releases(Book work) async => const [];
 
   @override
-  Future<List<BookSummary>> series(String bookId) async => const [];
+  Future<Series> series(String bookId) async => noSeries;
 
   @override
   Future<Resolved> resolve(Source source) async => Playable(source.url!);

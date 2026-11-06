@@ -27,6 +27,7 @@ class AddonsScreen extends StatelessWidget {
         title: const Text('Addons'),
         titleSpacing: 16 + readableInset(context),
         actions: [
+          AddButton(label: 'Add', onPressed: () => showAddSource(context)),
           MoreMenu(
             items: [
               if (Updater.enabled)
@@ -40,14 +41,9 @@ class AddonsScreen extends StatelessWidget {
               ),
             ],
           ),
+          // In line with the cards' right edge, as the title is with their left.
+          SizedBox(width: readableInset(context)),
         ],
-      ),
-      // Tabs stay alive side by side, so their buttons must not share a hero tag.
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: null,
-        onPressed: () => showAddSource(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Add'),
       ),
       body: ListenableBuilder(
         listenable: store,
@@ -73,7 +69,7 @@ class AddonsScreen extends StatelessWidget {
           }
           final side = 16 + readableInset(context);
           return ListView(
-            padding: EdgeInsets.fromLTRB(side, 8, side, 96),
+            padding: EdgeInsets.fromLTRB(side, 8, side, 16),
             children: [for (final addon in addons) _AddonCard(addon: addon)],
           );
         },
@@ -401,14 +397,17 @@ class _AddDialogState extends State<_AddDialog> {
                   ? null
                   : () =>
                         _run((store) => store.install(e.url, accept: _accept)),
-              child: Text(
-                // Same id: installing again replaces it and keeps its settings.
-                installed.addons.any(
-                      (a) => a.id == e.id || a.updateUrl == e.url,
-                    )
-                    ? 'Reinstall'
-                    : 'Install',
-              ),
+              // Same id: installing again replaces it and keeps its settings.
+              child: Text(switch (installed.addons
+                  .where((a) => a.id == e.id || a.updateUrl == e.url)
+                  .firstOrNull) {
+                null => 'Install',
+                final a
+                    when e.version != null &&
+                        compareVersions(e.version!, a.manifest.version) > 0 =>
+                  'Update',
+                _ => 'Reinstall',
+              }),
             ),
           ),
         if (_error != null)
@@ -418,6 +417,41 @@ class _AddDialogState extends State<_AddDialog> {
           ),
       ],
     );
+  }
+
+  /// The repositories opened before: one tap shows them again, with what is new.
+  List<Widget> _savedRepositories() {
+    final store = AppScope.of(context).addons;
+    final repos = store.repositories;
+    if (repos.isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      Text('Your repositories', style: Theme.of(context).textTheme.titleSmall),
+      for (final r in repos)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.folder_outlined),
+          title: Text(r.name),
+          subtitle: Text(
+            Uri.tryParse(r.url)?.host.isNotEmpty == true
+                ? Uri.parse(r.url).host
+                : r.url,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: _busy ? null : () => _run((store) => store.install(r.url)),
+          trailing: IconButton(
+            tooltip: 'Forget this repository',
+            icon: const Icon(Icons.close),
+            onPressed: _busy
+                ? null
+                : () async {
+                    await store.forgetRepository(r.url);
+                    if (mounted) setState(() {});
+                  },
+          ),
+        ),
+    ];
   }
 
   // Stays open while installing: closing it then would make the end of the install close the
@@ -447,19 +481,28 @@ class _AddDialogState extends State<_AddDialog> {
       title: const Text('Add an extension'),
       content: SizedBox(
         width: 480,
-        child: TextField(
-          controller: _controller,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          onSubmitted: (_) => _busy ? null : _install(),
-          decoration: InputDecoration(
-            labelText: 'Extension, repository or addon URL',
-            hintText: 'https://…',
-            helperText:
-                'Extensions run on this device; addons run on a server.',
-            helperMaxLines: 2,
-            errorText: _error,
-            errorMaxLines: 4,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                onSubmitted: (_) => _busy ? null : _install(),
+                decoration: InputDecoration(
+                  labelText: 'Extension, repository or addon URL',
+                  hintText: 'https://…',
+                  helperText:
+                      'Extensions run on this device; addons run on a server.',
+                  helperMaxLines: 2,
+                  errorText: _error,
+                  errorMaxLines: 4,
+                ),
+              ),
+              ..._savedRepositories(),
+            ],
           ),
         ),
       ),

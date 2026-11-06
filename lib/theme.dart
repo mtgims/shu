@@ -116,3 +116,9 @@ bool get _desktop => switch (defaultTargetPlatform) {
   TargetPlatform.macOS => true,
   _ => false,
 };
+
+/// [style] in Literata, the serif for book titles and their authors (two weights: 400 and 600;
+/// heavier asks get 600).
+TextStyle? bookTitle(TextStyle? style) =>
+    style?.copyWith(fontFamily: 'Literata') ??
+    const TextStyle(fontFamily: 'Literata');

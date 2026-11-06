@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:audiobooks/app.dart' show currentTab;
 import 'package:audiobooks/main.dart';
+import 'package:audiobooks/screens/continue_card.dart';
 import 'package:audiobooks/screens/catalog_screen.dart';
 import 'package:audiobooks/widgets/book_tiles.dart';
 import 'package:audiobooks/widgets/mini_player.dart';
@@ -170,8 +171,19 @@ void main() {
     await waitFor(tester, find.text('In this series'));
     await shot(tester, '06-book');
     // Wide windows keep the side rail on pages opened over the main screen.
-    if (tester.view.physicalSize.width / tester.view.devicePixelRatio >= 760) {
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    if (width >= 760) {
       expect(find.byType(NavigationRail), findsOneWidget);
+    }
+    // Roomy windows can fold the rail to icons and back.
+    if (width >= 1100) {
+      bool extended() =>
+          tester.widget<NavigationRail>(find.byType(NavigationRail)).extended;
+      expect(extended(), isTrue);
+      await tap(tester, find.byTooltip('Collapse'));
+      expect(extended(), isFalse);
+      await tap(tester, find.byTooltip('Expand'));
+      expect(extended(), isTrue);
     }
     // ↓ scrolls the page when nothing in particular has the focus.
     final page = tester
@@ -221,8 +233,8 @@ void main() {
     await waitFor(tester, find.byType(BookListTile));
     await shot(tester, '08-search');
 
-    // "Restart": a fresh app on the same storage shows Home at once, the book in Continue
-    // listening and in the mini player.
+    // "Restart": a fresh app on the same storage shows Home at once, with the book in the mini
+    // player.
     currentTab.value =
         0; // a real restart is a new process, where it starts at Home
     final restarted = (await tester.runAsync(
@@ -232,8 +244,9 @@ void main() {
       RepaintBoundary(key: GlobalKey(), child: const SizedBox()),
     );
     await tester.pumpWidget(RepaintBoundary(key: rootKey, child: restarted));
-    await waitFor(tester, find.text('Continue listening'));
+    // The book comes back in the mini player; Home doesn't show it a second time.
     await waitFor(tester, find.byType(MiniPlayer));
+    expect(find.byType(ContinueCard), findsNothing);
     await shot(tester, '09-restart');
 
     await tester.runAsync(() => server.close(force: true));

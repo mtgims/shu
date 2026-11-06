@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.7.0 - 2026-11-06
+
+### New
+- Downloads: a Download button on a book's page (also in the player's and the library's menus)
+  keeps the book on your device, and it then plays without a connection. On a book from a
+  catalog it picks the version Play would
+- While a book downloads, its page and its row in the library show how far it got, the size
+  and the speed (also in the notification on Android)
+- Downloads carry on where they stopped, also after closing Shu. On Android they keep going with
+  the screen off, with a notification to follow them or cancel
+- On Android downloads wait for Wi-Fi unless you allow mobile data
+- Library has a Downloaded filter and a Downloads button: the space they take, Delete all, and
+  an option to delete downloads of finished books
+- On a computer the Library can show your books as a grid of covers
+- On a computer the side rail folds to icons only and back (the button at its bottom), and
+  remembers how you left it. Windows under 1100 px get the icons only
+- On a computer the full player takes the whole window: the side rail slides away while it
+  shows
+- The player shows the whole book under the chapter: a bar with one part per chapter, how much
+  you've heard, and the time left at your speed (when the chapters' lengths are known)
+- Tap the player's cover to play or pause. On a phone, swipe it sideways to change chapter
+- The cover sits back a little while paused, and the phone gives a light tick on skips and
+  when you let go of the seek bar
+- Going back to a chapter you left before its end goes on where you were in it. It can be
+  turned off in Playback settings ("Remember where you left each chapter")
+- The Download, Cancel and Remove download menu items have icons, like Playback settings
+- Home's "Continue listening" no longer repeats the book in the player bar. When no book is
+  loaded, the one you listened to last is a large card in its cover's colours: how far you
+  are, the time left, and a button to go on
+- Book titles are set in Literata, a serif made for reading. Books without a cover picture get a
+  cover with their title in it
+- The library and Home show the time left in each book, when the chapters' lengths are known
+- On a phone the player bar above the tabs takes the colour of the book's cover
+- Driving mode on phones (the car button on the player): one big play/pause and a big "Back
+  15 s", nothing else to tap by mistake. The screen stays on while it shows
+- After 15 seconds untouched, driving mode goes all black and turns the backlight down, which
+  costs next to nothing on OLED screens. The first tap only wakes it, so a blind tap can't pause
+  or skip
+- While driving mode is black, volume up plays or pauses and volume down goes back 15 seconds
+- Shu remembers the repositories you open: Add → Extension or repository lists them, so there's
+  no link to paste again. In a repository, extensions with a newer version say Update
+- On a phone, swipe the player bar above the tabs sideways to stop listening. The book stays in
+  your library, and Home offers it again
+- When a book from a catalog ends, the player suggests the next one in its series (with the
+  Audiobook Catalog extension 1.2.0 or newer)
+
+### Changed
+- "Continue listening" and the book Shu reopens at start skip books that were only downloaded
+  and never played
+- The player bar on a computer is one slim row: book, buttons, seek bar, speed and sleep timer
+- On a phone the player above the tabs is a floating card, with its progress along the bottom
+- "Add audiobooks" and "Add" moved into the top bar of Library and Addons, instead of a button
+  floating over the list
+- On a computer the side rail shows Shu's name at the top, and Home starts right away without
+  its own title bar
+- On a computer the Library's filters sit in the top bar next to its title
+- On a computer a book's "Plays from" line sits under its Play button
+- Books not started or finished no longer show an empty progress line in the Library list
+- Lock screens, the car and desktop media widgets show the book's title first, then the chapter
+  and author
+- On Android 13 and newer the lock screen's buttons are 15 seconds back, play and 30 seconds
+  forward. Headphone and car buttons still skip chapters
+- The player's times no longer jiggle as they count
+
+### Fixed
+- The player no longer jumps down and needs scrolling while it gets the audio: the message
+  shows on the cover instead
+- Closing the player showed a second cover leaving with the page. On a phone the player now
+  fades out where it is while its cover goes back to the player bar (dragging it down still
+  slides it)
+- A book without a cover picture showed its title in a strange underlined font while the cover
+  flew in or out of the player
+- On Android the playback controls didn't show anywhere: not in the notifications, on the lock
+  screen or in quick settings. The app was built without the icons for their buttons, which
+  Android won't do without. Shu also asks to show notifications when playback starts
+- Linux desktop media widgets showed Shu as "Audiobook playback", lost track of the position at
+  other speeds and after skips, and couldn't seek by a few seconds
+- Covers of books from this device now show on the lock screen and in desktop media widgets
+- On a phone, Playback settings and Downloads no longer cut off their last switches: they get
+  taller and scroll when they don't fit
+- The player on a phone could scroll a little though nothing was hidden, which also got in the
+  way of dragging it down to close: the cover now takes the room the controls leave
+
 ## 0.6.2 - 2026-10-20
 
 ### New

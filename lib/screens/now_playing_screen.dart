@@ -1,16 +1,29 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
+import '../addons/addon_store.dart';
+import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
 import '../player/audiobook_player.dart';
+import '../theme.dart';
 import '../widgets/adaptive.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
 import '../widgets/cover_colors.dart';
+import '../widgets/download_button.dart';
 import '../widgets/marked_track.dart';
 import '../widgets/more_menu.dart';
+import 'book_progress.dart';
+import 'driving_screen.dart';
 import 'marks.dart';
+import 'player_cover.dart';
 import 'player_extras.dart';
 
 export 'player_extras.dart' show PlayerExtras;
@@ -54,20 +67,43 @@ class NowPlayingScreen extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          if (entry != null && _phone)
+            IconButton(
+              tooltip: 'Driving mode',
+              icon: const Icon(Icons.directions_car_outlined),
+              onPressed: () =>
+                  Navigator.of(context).push(DrivingScreen.route()),
+            ),
           if (!sidePane && entry != null)
             IconButton(
               tooltip: 'Chapters and bookmarks',
               icon: const Icon(Icons.format_list_numbered),
               onPressed: () => _showMarks(context, player, entry),
             ),
-          MoreMenu(
-            items: [
-              MenuItemButton(
-                leadingIcon: const Icon(Icons.tune),
-                onPressed: () => showAudioSettings(context, player.settings),
-                child: const Text('Playback settings'),
-              ),
-            ],
+          ListenableBuilder(
+            listenable: AppScope.of(context).downloads,
+            builder: (context, _) => MoreMenu(
+              items: [
+                MenuItemButton(
+                  leadingIcon: const Icon(Icons.tune),
+                  onPressed: () => showAudioSettings(context, player.settings),
+                  child: const Text('Playback settings'),
+                ),
+                if (entry != null && _phone)
+                  MenuItemButton(
+                    leadingIcon: const Icon(Icons.directions_car_outlined),
+                    onPressed: () =>
+                        Navigator.of(context).push(DrivingScreen.route()),
+                    child: const Text('Driving mode'),
+                  ),
+                if (entry != null)
+                  ?downloadItem(
+                    context,
+                    AppScope.of(context).addons.byId(entry.addonId),
+                    entry,
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -95,57 +131,77 @@ class NowPlayingScreen extends StatelessWidget {
     final main = SafeArea(
       child: LayoutBuilder(
         builder: (context, box) {
-          final coverSize = (box.maxHeight * 0.42).clamp(140.0, 380.0);
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, kToolbarHeight, 24, 8),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: scheme.shadow.withValues(alpha: 0.25),
-                            blurRadius: 32,
-                            offset: const Offset(0, 12),
-                          ),
-                        ],
-                      ),
-                      child: Hero(
-                        tag: playerCoverTag,
-                        transitionOnUserGestures: true,
-                        flightShuttleBuilder: smallCoverInFlight,
-                        child: BookCover(
-                          title: entry.book.title,
-                          url: entry.book.cover,
-                          size: coverSize.toDouble(),
-                          radius: 16,
-                        ),
-                      ),
+          Widget cover(double size) => PlayerCover(
+            player: player,
+            entry: entry,
+            size: size,
+            heroTag: playerCoverTag,
+            flightShuttleBuilder: smallCoverInFlight,
+            // The status sits on the cover so it never pushes the controls down.
+            overlay: _StatusBanner(player: player),
+          );
+          final controls = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListenableBuilder(
+                listenable: player.current,
+                builder: (_, _) => _Titles(entry: entry),
+              ),
+              _NextInSeries(player: player, entry: entry),
+              if (entry.book.chapters.length > 1) ...[
+                const SizedBox(height: 16),
+                Padding(
+                  // In line with the seek bar's track and times.
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: BookProgress(player: player, entry: entry),
+                ),
+                const SizedBox(height: 8),
+              ] else
+                const SizedBox(height: 20),
+              // Repaints often; keep it from repainting the cover and text.
+              RepaintBoundary(child: PlayerSeekBar(player: player)),
+              ListenableBuilder(
+                listenable: player.current,
+                builder: (_, _) =>
+                    PlayerTransport(player: player, entry: entry),
+              ),
+              const SizedBox(height: 8),
+              PlayerExtras(player: player),
+            ],
+          );
+          const padding = EdgeInsets.fromLTRB(24, kToolbarHeight, 24, 8);
+          Widget column(List<Widget> children) => Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(children: children),
+            ),
+          );
+          // Too short for a useful cover beside the controls (a phone on its side): scroll.
+          if (box.maxHeight < 620) {
+            return SingleChildScrollView(
+              padding: padding,
+              child: column([cover(140), const SizedBox(height: 20), controls]),
+            );
+          }
+          // The controls take what they need; the cover fills the rest, so the page fits the
+          // screen exactly and never scrolls (which also fought the drag that closes it).
+          return Padding(
+            padding: padding,
+            child: column([
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, room) => Center(
+                    child: cover(
+                      math
+                          .min(room.maxWidth, room.maxHeight)
+                          .clamp(120.0, 380.0),
                     ),
-                    const SizedBox(height: 20),
-                    ListenableBuilder(
-                      listenable: player.current,
-                      builder: (_, _) => _Titles(entry: entry),
-                    ),
-                    const SizedBox(height: 12),
-                    _StatusBanner(player: player),
-                    // Repaints often; keep it from repainting the cover and text.
-                    RepaintBoundary(child: PlayerSeekBar(player: player)),
-                    ListenableBuilder(
-                      listenable: player.current,
-                      builder: (_, _) =>
-                          PlayerTransport(player: player, entry: entry),
-                    ),
-                    const SizedBox(height: 8),
-                    PlayerExtras(player: player),
-                  ],
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
+              controls,
+            ]),
           );
         },
       ),
@@ -275,8 +331,10 @@ class _Titles extends StatelessWidget {
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: bookTitle(
+            theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
         if (chapters.length > 1)
@@ -303,15 +361,18 @@ class _StatusBanner extends StatelessWidget {
       valueListenable: player.status,
       builder: (context, status, _) {
         return switch (status.phase) {
-          PlayerPhase.loading => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              status.message ?? 'Getting the audio…',
-              textAlign: TextAlign.center,
+          PlayerPhase.loading => Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                status.message ?? 'Getting the audio…',
+                textAlign: TextAlign.center,
+              ),
             ),
           ),
           PlayerPhase.downloading || PlayerPhase.error => Card(
-            margin: const EdgeInsets.symmetric(vertical: 8),
+            margin: EdgeInsets.zero,
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
@@ -338,7 +399,7 @@ class _StatusBanner extends StatelessWidget {
               ),
             ),
           ),
-          _ => const SizedBox(height: 8),
+          _ => const SizedBox.shrink(),
         };
       },
     );
@@ -390,6 +451,8 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
     final theme = Theme.of(context);
     final muted = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
+      // Every digit as wide as the others, so the times don't jiggle as they count.
+      fontFeatures: const [FontFeature.tabularFigures()],
     );
     return StreamBuilder<Duration>(
       stream: widget.player.positionStream,
@@ -416,6 +479,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
             max: max > 0 ? max : 1,
             onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
             onChangeEnd: (v) {
+              HapticFeedback.selectionClick();
               widget.player.seek(Duration(milliseconds: v.round()));
               setState(() => _dragging = null);
             },
@@ -463,6 +527,12 @@ class PlayerTransport extends StatelessWidget {
   /// Smaller buttons, packed together (the desktop player bar).
   final bool compact;
 
+  /// A light tick under the finger on phones (desktops have no haptics: nothing happens).
+  static void _tap(Future<void> Function() action) {
+    HapticFeedback.lightImpact();
+    action();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -474,13 +544,13 @@ class PlayerTransport extends StatelessWidget {
         IconButton(
           tooltip: 'Previous chapter',
           iconSize: 30 * k,
-          onPressed: player.skipToPrevious,
+          onPressed: () => _tap(player.skipToPrevious),
           icon: const Icon(Icons.skip_previous_rounded),
         ),
         IconButton(
           tooltip: 'Back 15 seconds (←)',
           iconSize: 34 * k,
-          onPressed: player.rewind,
+          onPressed: () => _tap(player.rewind),
           icon: const Icon(Icons.replay),
         ),
         StreamBuilder<bool>(
@@ -488,11 +558,11 @@ class PlayerTransport extends StatelessWidget {
           initialData: player.playing,
           builder: (_, snap) => IconButton.filled(
             tooltip: snap.data == true ? 'Pause (Space)' : 'Play (Space)',
-            iconSize: 44 * k,
+            iconSize: compact ? 30 : 44,
             style: IconButton.styleFrom(
               backgroundColor: theme.colorScheme.primary,
               foregroundColor: theme.colorScheme.onPrimary,
-              minimumSize: Size.square(76 * k),
+              minimumSize: Size.square(compact ? 44 : 76),
             ),
             onPressed: player.togglePlay,
             icon: Icon(
@@ -505,14 +575,14 @@ class PlayerTransport extends StatelessWidget {
         IconButton(
           tooltip: 'Forward 30 seconds (→)',
           iconSize: 34 * k,
-          onPressed: player.fastForward,
+          onPressed: () => _tap(player.fastForward),
           icon: const Icon(Icons.forward_30),
         ),
         IconButton(
           tooltip: 'Next chapter',
           iconSize: 30 * k,
           onPressed: entry.chapterIndex + 1 < entry.book.chapters.length
-              ? player.skipToNext
+              ? () => _tap(player.skipToNext)
               : null,
           icon: const Icon(Icons.skip_next_rounded),
         ),
@@ -570,6 +640,9 @@ class _AfterOpeningState extends State<_AfterOpening> {
   );
 }
 
+/// Driving mode is for phones (in a car holder), not computers, whatever the window's size.
+final _phone = Platform.isAndroid || Platform.isIOS;
+
 /// The cover that flies from the player bar into the player and back.
 const playerCoverTag = 'player-cover';
 
@@ -584,12 +657,17 @@ Widget smallCoverInFlight(
 ) {
   final bar = direction == HeroFlightDirection.push ? fromHero : toHero;
   final cover = (bar.widget as Hero).child as BookCover;
-  return BookCover(
-    title: cover.title,
-    url: cover.url,
-    radius: 12,
-    decodeWidth: BookCover.decodeWidthFor(
-      (cover.size ?? 56) * MediaQuery.devicePixelRatioOf(context),
+  // The flight is drawn above the pages, outside their Material: the placeholder's title needs
+  // one for its text style.
+  return Material(
+    type: MaterialType.transparency,
+    child: BookCover(
+      title: cover.title,
+      url: cover.url,
+      radius: 12,
+      decodeWidth: BookCover.decodeWidthFor(
+        (cover.size ?? 56) * MediaQuery.devicePixelRatioOf(context),
+      ),
     ),
   );
 }
@@ -646,8 +724,17 @@ class PlayerRoute extends PageRoute<void> {
     animation!.addStatusListener(_snapshotWhileMoving);
   }
 
-  void _snapshotWhileMoving(AnimationStatus status) =>
-      _snapshot.allowSnapshotting = status.isAnimating && !_dragging;
+  void _snapshotWhileMoving(AnimationStatus status) {
+    _snapshot.allowSnapshotting = status.isAnimating && !_dragging;
+    // Closing: the cover starts flying only after the first frame, so the picture taken then
+    // still holds it and a second cover would leave with the page. Once the flight has
+    // started (the post-frame callbacks have all run), the picture is taken again without it.
+    if (status == AnimationStatus.reverse) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => scheduleMicrotask(_snapshot.clear),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -695,8 +782,16 @@ class PlayerRoute extends PageRoute<void> {
       curve: Easing.emphasizedDecelerate,
       reverseCurve: Easing.emphasizedAccelerate,
     );
-    if (isWide(context)) {
-      // A window: the player rises a little and fades in where it will be.
+    // Closing by button or Back on a phone also fades where it is: the whole page sliding down
+    // beside the cover flying into the bar looked like two things leaving. A finger that
+    // drags it down still moves the page.
+    final fades =
+        isWide(context) ||
+        (animation.status == AnimationStatus.reverse &&
+            !_dragging &&
+            !_closedByDrag);
+    if (fades) {
+      // The player rises a little and fades in where it will be (and back out).
       return FadeTransition(
         opacity: curved,
         child: SlideTransition(
@@ -726,6 +821,9 @@ class PlayerRoute extends PageRoute<void> {
   /// Whether a drag is under way: a tap also ends in a "cancel", with nothing to undo.
   bool _dragging = false;
 
+  /// The drag closed the page: it slides on down rather than switching to a fade.
+  bool _closedByDrag = false;
+
   void _grab() {
     _dragging = true;
     // The finger moves the page itself: it stays live.
@@ -746,10 +844,82 @@ class PlayerRoute extends PageRoute<void> {
     _dragging = false;
     final close = velocity > 700 || controller!.value < 0.67;
     if (close) {
+      _closedByDrag = true;
       navigator?.pop();
     } else {
       controller!.forward();
     }
     navigator?.didStopUserGesture();
   }
+}
+
+/// Once the book has ended: the next one of its series, to open (its page, where Play picks a
+/// version). Nothing starts by itself.
+class _NextInSeries extends StatelessWidget {
+  const _NextInSeries({required this.player, required this.entry});
+  final AudiobookPlayer player;
+  final LibraryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder(
+      valueListenable: player.nextInSeries,
+      builder: (context, next, _) {
+        if (next == null || !entry.finished) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                children: [
+                  BookCover(
+                    title: next.book.title,
+                    url: next.book.cover,
+                    size: 56,
+                    radius: 8,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Next in the series',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        Text(
+                          next.book.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: bookTitle(theme.textTheme.titleSmall),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonal(
+                    onPressed: () => openNextInSeries(next.addon, next.book),
+                    child: const Text('Open'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Closes the player (when open) and shows the next book's page.
+void openNextInSeries(InstalledAddon addon, BookSummary book) {
+  final navigator = navigatorKey.currentState;
+  if (navigator == null) return;
+  navigator.popUntil((route) => route is! PlayerRoute);
+  openBook(navigator.context, addon, book);
 }

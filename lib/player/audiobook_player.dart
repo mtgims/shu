@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -6,7 +7,10 @@ import 'package:just_audio/just_audio.dart';
 
 import '../addons/addon_store.dart';
 import '../addons/client.dart';
+import '../addons/links.dart';
 import '../addons/models.dart';
+import '../downloads/download_service.dart';
+import '../downloads/download_store.dart';
 import '../library/library_store.dart';
 import 'player_settings.dart';
 import 'position_ticks.dart';
@@ -89,6 +93,9 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   final LibraryStore _library;
   final AddonStore _addons;
   final PlayerSettings settings;
+
+  /// Downloaded books play from their files.
+  DownloadStore? downloads;
 
   /// Raises quiet recordings (Android), see [PlayerSettings.voiceBoost].
   final _boost = AndroidLoudnessEnhancer();
@@ -199,6 +206,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     Book? look,
     List<Alternative> alternatives = const [],
   }) async {
+    nextInSeries.value = null;
     // Only a fallback (which sets the next note) keeps a note about the version before.
     _loadingNote = _nextNote;
     _nextNote = null;
@@ -237,7 +245,9 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   void restoreLastSession() {
     // Skips books whose addon was removed, so an older one that still plays comes back.
     final entry = _library.entries
-        .where((e) => !e.finished && _addons.byId(e.addonId) != null)
+        .where(
+          (e) => !e.finished && e.started && _addons.byId(e.addonId) != null,
+        )
         .firstOrNull;
     if (entry == null) return;
     final addon = _addons.byId(entry.addonId)!;
@@ -267,13 +277,16 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     mediaItem.add(
       MediaItem(
         id: '${addon.id}|${entry.book.id}|${chapter.id}',
-        title: chapter.title,
+        // The book first: lock screens, the car and desktop media widgets show two lines, title
+        // and artist, and the chapter alone wouldn't say what is playing.
+        title: entry.book.title,
+        artist: [
+          chapter.title,
+          if (entry.book.byline.isNotEmpty) entry.book.byline,
+        ].join(' · '),
         album: entry.book.title,
-        artist: entry.book.byline.isEmpty ? null : entry.book.byline,
         duration: duration,
-        artUri: entry.book.cover == null
-            ? null
-            : Uri.tryParse(entry.book.cover!),
+        artUri: _artUri(entry.book.cover),
       ),
     );
   }
@@ -329,6 +342,7 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     }
     if (index == entry.chapterIndex) return;
     final forward = index > entry.chapterIndex;
+    if (forward) entry.chapterPlaces.remove(entry.chapterIndex);
     entry.chapterIndex = index;
     entry.position = position;
     _announce(addon, entry, duration: _player.duration);
@@ -360,7 +374,8 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     await openBook(addon, entry.book);
   }
 
-  /// Plays chapter [index] from its start; the place left is kept in the history.
+  /// Plays chapter [index]: from where it was left when the user jumped away from it before
+  /// (and the setting is on), otherwise from its start. The place left is kept in the history.
   Future<void> playChapter(int index) => _playChapter(index, remember: true);
 
   Future<void> _playChapter(int index, {required bool remember}) async {
@@ -369,11 +384,47 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       return;
     }
     await _saveProgress();
-    if (remember) _remember(entry);
+    final from = entry.chapterIndex;
+    if (remember) {
+      _remember(entry);
+      _keepChapterPlace(entry);
+    }
     _moveTo(entry, index);
+    // Picking the chapter already playing starts it over.
+    if (remember && index != from && settings.rememberChapterPlaces) {
+      final place = entry.chapterPlaces[index];
+      if (place != null) entry.position = place;
+    }
     await _library.save(entry);
     current.changed();
     await _loadChapter(play: true);
+  }
+
+  /// Keeps where the user leaves the open chapter by a jump, unless it is (nearly) done or
+  /// barely begun; that chapter then goes on from there when they come back to it.
+  void _keepChapterPlace(LibraryEntry entry) {
+    final index = entry.chapterIndex;
+    final chapter = entry.book.chapters[index];
+    final into = entry.position - (chapter.start ?? Duration.zero);
+    final length = chapter.duration != null
+        ? Duration(seconds: chapter.duration!)
+        : chapter.file == null
+        ? _player.duration
+        : null;
+    // The last 15 s, or the last tenth of a short chapter, count as heard to the end.
+    final nearEnd =
+        length != null &&
+        length - into <
+            (length * 0.1 < const Duration(seconds: 15)
+                ? length * 0.1
+                : const Duration(seconds: 15));
+    if (!settings.rememberChapterPlaces ||
+        into < const Duration(seconds: 5) ||
+        nearEnd) {
+      entry.chapterPlaces.remove(index);
+    } else {
+      entry.chapterPlaces[index] = entry.position;
+    }
   }
 
   /// Plays from [mark] (a bookmark, or a place in the history).
@@ -578,26 +629,21 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     LibraryEntry entry,
     int index,
   ) async {
-    final chapter = entry.book.chapters[index];
+    final file = downloads?.fileFor(entry, index);
+    if (file != null) return Uri.file(file).toString();
     final key = _linkKey(addon, entry, index);
     final cached = _links[key];
     if (cached != null && DateTime.now().isBefore(cached.until)) {
       return cached.url;
     }
 
-    final list = await addon.client.sources(entry.book.id, chapter.id);
-    if (list.sources.isEmpty) {
-      throw AddonException(
-        list.message ?? 'The addon has no source for this chapter.',
-      );
-    }
-    final source = _pickSource(list.sources, entry.sourceId);
-    if (entry.sourceId != source.id) {
-      entry.sourceId = source.id;
+    final (:link, :sourceId) = await chapterLink(addon, entry, index);
+    if (entry.sourceId != sourceId) {
+      entry.sourceId = sourceId;
       unawaited(_library.save(entry, notify: false));
     }
 
-    switch (await addon.client.resolve(source)) {
+    switch (link) {
       case Playable(:final url, :final validFor):
         final lifetime = validFor != null && validFor < _linkLifetime
             ? validFor
@@ -621,16 +667,6 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
   static String _linkKey(InstalledAddon addon, LibraryEntry entry, int index) {
     final chapter = entry.book.chapters[index];
     return '${addon.id}|${entry.book.id}|${chapter.file ?? chapter.id}';
-  }
-
-  static Source _pickSource(List<Source> sources, String? preferred) {
-    for (final s in sources) {
-      if (s.id == preferred) return s;
-    }
-    for (final s in sources) {
-      if (s.cached == true) return s;
-    }
-    return sources.first;
   }
 
   /// Resolves the next chapter ahead of time so the switch is quick.
@@ -663,6 +699,10 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     final entry = current.value;
     if (entry == null) return;
     final next = _nextFile(entry);
+    // Heard to the end: nothing to come back to in this file's chapters.
+    for (var i = entry.chapterIndex; i < next; i++) {
+      entry.chapterPlaces.remove(i);
+    }
     if (sleepTimer.value?.endOfChapter == true) {
       cancelSleepTimer();
       unawaited(_player.pause());
@@ -682,6 +722,34 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       unawaited(_library.save(entry));
       _sync.report(_addon, entry);
       status.value = const PlayerStatus(PlayerPhase.idle, message: 'Finished');
+      unawaited(_findNextInSeries(entry));
+    }
+  }
+
+  /// What to suggest once the open book has ended: the next book of its series, from the catalog it
+  /// was started from (null when there is none, or it isn't known).
+  final nextInSeries =
+      ValueNotifier<({InstalledAddon addon, BookSummary book})?>(null);
+
+  Future<void> _findNextInSeries(LibraryEntry entry) async {
+    final work = entry.workKey;
+    final bar = work?.indexOf('|') ?? -1;
+    if (work == null || bar < 0) return;
+    final addon = _addons.byId(work.substring(0, bar));
+    if (addon == null) return;
+    try {
+      final series = await addon.client.series(work.substring(bar + 1));
+      final at = series.at;
+      // Another book may have started meanwhile.
+      if (at == null ||
+          at >= series.books.length ||
+          current.value?.key != entry.key) {
+        return;
+      }
+      nextInSeries.value = (addon: addon, book: series.books[at]);
+    } on Object catch (e) {
+      // Only the type: an extension's error can carry a link with an API key.
+      debugPrint('No next book in the series (${e.runtimeType})');
     }
   }
 
@@ -737,6 +805,8 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     _ => e.toString(),
   };
 
+  bool _askedForNotifications = false;
+
   static final _sleepPlus = MediaControl.custom(
     androidIcon: 'drawable/ic_sleep_add',
     label: 'Sleep timer +5 min',
@@ -745,6 +815,12 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   void _broadcast(PlaybackEvent event) {
     final playing = _player.playing;
+    if (playing && !_askedForNotifications) {
+      _askedForNotifications = true;
+      // The playback notification (and so the lock screen and quick settings controls) needs
+      // this permission on Android 13+.
+      unawaited(DownloadService.askForNotifications());
+    }
     playbackState.add(
       playbackState.value.copyWith(
         controls: [
@@ -753,12 +829,17 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
           MediaControl.fastForward,
           if (sleepTimer.value?.endsAt != null) _sleepPlus,
         ],
-        systemActions: const {
+        systemActions: {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
-          MediaAction.skipToNext,
-          MediaAction.skipToPrevious,
+          // Android 13+ gives chapter skip the lock screen's main buttons when it is listed;
+          // without it they go to 15 s back and 30 s forward. Headset and car next/previous
+          // keys still skip chapters: audio_service passes them to click() either way.
+          if (!Platform.isAndroid) ...[
+            MediaAction.skipToNext,
+            MediaAction.skipToPrevious,
+          ],
         },
         androidCompactActionIndices: const [0, 1, 2],
         processingState: const {
@@ -983,11 +1064,19 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
         _browseItem(e),
   ].take(30).toList();
 
+  /// A cover as the system loads it: books from this device keep a file path, which needs
+  /// its file: scheme.
+  static Uri? _artUri(String? cover) {
+    if (cover == null) return null;
+    final uri = Uri.tryParse(cover);
+    return uri != null && uri.hasScheme ? uri : Uri.file(cover);
+  }
+
   static MediaItem _browseItem(LibraryEntry entry) => MediaItem(
     id: entry.key,
     title: entry.book.title,
     artist: entry.book.byline.isEmpty ? null : entry.book.byline,
-    artUri: entry.book.cover == null ? null : Uri.tryParse(entry.book.cover!),
+    artUri: _artUri(entry.book.cover),
     playable: true,
     // How far along, as Android Auto shows it under the title.
     extras: {

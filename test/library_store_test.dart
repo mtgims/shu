@@ -154,6 +154,25 @@ void main() {
     );
   });
 
+  test(
+    'chapter places survive a restart; ones outside the book are dropped',
+    () {
+      final entry = LibraryEntry(
+        addonId: 'a',
+        book: book,
+        chapterPlaces: {1: const Duration(seconds: 42)},
+      );
+      final json = jsonDecode(entry.encode()) as Map<String, dynamic>;
+      expect(LibraryEntry.fromJson(json).chapterPlaces, {
+        1: const Duration(seconds: 42),
+      });
+      json['chapterPlaces'] = {'1': 5000, '9': 1000, 'x': 1, '2': 'bad'};
+      expect(LibraryEntry.fromJson(json).chapterPlaces, {
+        1: const Duration(seconds: 5),
+      });
+    },
+  );
+
   test('saving splices the encoded book in: same data as toJson', () {
     final entry = LibraryEntry(addonId: 'a', book: book, workKey: 'w|1')
       ..chapterIndex = 1

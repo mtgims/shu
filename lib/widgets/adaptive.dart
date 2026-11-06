@@ -52,3 +52,23 @@ Future<T?> showPanel<T>(
     ),
   );
 }
+
+/// A page's Add action in its top bar: a labelled button in wide windows, a + on phones.
+class AddButton extends StatelessWidget {
+  const AddButton({super.key, required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => isWide(context)
+      ? FilledButton.tonalIcon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.add),
+          label: Text(label),
+        )
+      : IconButton(
+          tooltip: label,
+          onPressed: onPressed,
+          icon: const Icon(Icons.add),
+        );
+}

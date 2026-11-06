@@ -9,8 +9,11 @@ import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../app.dart';
 import '../library/library_store.dart';
+import '../player/audiobook_player.dart' show Alternative;
+import '../theme.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
+import '../widgets/download_button.dart';
 import '../widgets/mini_player.dart';
 import 'local_book_menu.dart';
 import 'now_playing_screen.dart';
@@ -69,10 +72,13 @@ class _BookScreenState extends State<BookScreen> {
     if (book.isWork) {
       _versions = findVersions(AppScope.of(context).addons, book);
       if (book.series != null) {
-        _series = widget.addon.client.series(book.id).catchError((Object e) {
-          debugPrint('No series row for ${book.id}: $e');
-          return <BookSummary>[];
-        });
+        _series = widget.addon.client
+            .series(book.id)
+            .then((s) => s.books)
+            .catchError((Object e) {
+              debugPrint('No series row for ${book.id}: $e');
+              return <BookSummary>[];
+            });
       }
       return;
     }
@@ -114,13 +120,45 @@ class _BookScreenState extends State<BookScreen> {
   Future<void> _playWork(Book work) async {
     final scope = AppScope.of(context);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final earlier = scope.library.findByWork(widget.addon.id, work.id);
     if (earlier != null && !earlier.finished) {
       unawaited(scope.player.resume(earlier));
       await navigator.push(NowPlayingScreen.route());
       return;
     }
+    final choice = await _chooseVersion(work);
+    if (choice == null) return;
+    unawaited(
+      scope.player.openBook(
+        choice.addon,
+        choice.book,
+        workKey: _workKey,
+        look: work,
+        alternatives: choice.alternatives,
+      ),
+    );
+    await navigator.push(NowPlayingScreen.route());
+  }
+
+  /// Download on a catalog book: the version listened to before, or the one Play would pick.
+  Future<void> _downloadWork(Book work) async {
+    final scope = AppScope.of(context);
+    final earlier = scope.library.findByWork(widget.addon.id, work.id);
+    final addon = earlier == null ? null : scope.addons.byId(earlier.addonId);
+    if (earlier != null && addon != null) {
+      return scope.downloads.add(addon, earlier.book);
+    }
+    final choice = await _chooseVersion(work);
+    if (choice == null) return;
+    await scope.downloads.add(choice.addon, choice.book, workKey: _workKey);
+  }
+
+  /// The best version of [work] (the user picks when none clearly is the book), in the work's
+  /// look, with the others to fall back on; null when there is none (the user is told).
+  Future<({InstalledAddon addon, Book book, List<Alternative> alternatives})?>
+  _chooseVersion(Book work) async {
+    final scope = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _starting = true);
     try {
       final versions = await (_versions ?? findVersions(scope.addons, work));
@@ -128,28 +166,23 @@ class _BookScreenState extends State<BookScreen> {
         messenger.showSnackBar(
           const SnackBar(content: Text('No versions found to play.')),
         );
-        return;
+        return null;
       }
       final good = versions.where((v) => v.isGoodMatch).toList();
       // When no version is clearly this book, the user decides instead of a guess.
       if (good.isEmpty) {
-        if (!mounted) return;
+        if (!mounted) return null;
         final picked = await pickVersion(context, versions);
-        if (picked == null) return;
+        if (picked == null) return null;
         final release = await ContentCache.book(
           picked.addon,
           picked.release.id,
         );
-        unawaited(
-          scope.player.openBook(
-            picked.addon,
-            release.withLookOf(work),
-            workKey: _workKey,
-            look: work,
-          ),
+        return (
+          addon: picked.addon,
+          book: release.withLookOf(work),
+          alternatives: const <Alternative>[],
         );
-        await navigator.push(NowPlayingScreen.route());
-        return;
       }
       // The first good version that is ready at once, the others to fall back on.
       final order = await playOrder(good);
@@ -157,7 +190,7 @@ class _BookScreenState extends State<BookScreen> {
         messenger.showSnackBar(
           const SnackBar(content: Text('None of the versions can be played.')),
         );
-        return;
+        return null;
       }
       final first = order.first;
       final release =
@@ -166,25 +199,21 @@ class _BookScreenState extends State<BookScreen> {
             first.version.addon,
             first.version.release.id,
           );
-      unawaited(
-        scope.player.openBook(
-          first.version.addon,
-          release.withLookOf(work),
-          workKey: _workKey,
-          look: work,
-          alternatives: [
-            for (final o in order.skip(1))
-              (
-                addon: o.version.addon,
-                bookId: o.version.release.id,
-                book: o.book,
-              ),
-          ],
-        ),
+      return (
+        addon: first.version.addon,
+        book: release.withLookOf(work),
+        alternatives: [
+          for (final o in order.skip(1))
+            (
+              addon: o.version.addon,
+              bookId: o.version.release.id,
+              book: o.book,
+            ),
+        ],
       );
-      await navigator.push(NowPlayingScreen.route());
     } on Object catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('$e')));
+      return null;
     } finally {
       if (mounted) setState(() => _starting = false);
     }
@@ -272,11 +301,11 @@ class _BookScreenState extends State<BookScreen> {
         Text(
           summary.title,
           textAlign: wide ? TextAlign.start : TextAlign.center,
-          style: theme.textTheme.headlineSmall,
+          style: bookTitle(theme.textTheme.headlineSmall),
         ),
         if (summary.byline.isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text(summary.byline, style: theme.textTheme.titleMedium),
+          Text(summary.byline, style: bookTitle(theme.textTheme.titleMedium)),
         ],
         if (summary.narrators.isNotEmpty)
           Text(
@@ -332,9 +361,51 @@ class _BookScreenState extends State<BookScreen> {
         : ListenableBuilder(
             listenable: moves,
             builder: (_, _) {
-              if (book.isWork) return _workPlayButton(book);
-              final (entry, isCurrent) = _place(book);
-              return _playButton(book, entry, isCurrent);
+              final Widget button;
+              final DownloadButton? download;
+              final String? downloadKey;
+              if (book.isWork) {
+                button = _workPlayButton(book);
+                downloadKey = scope.library
+                    .findByWork(widget.addon.id, book.id)
+                    ?.key;
+                download = DownloadButton(
+                  bookKey: downloadKey,
+                  onDownload: _starting ? null : () => _downloadWork(book),
+                );
+              } else {
+                final (entry, isCurrent) = _place(book);
+                button = _playButton(book, entry, isCurrent);
+                downloadKey = LibraryEntry.keyOf(widget.addon.id, book.id);
+                // Books on this device have nothing to download.
+                download = widget.addon.isLocal
+                    ? null
+                    : DownloadButton(
+                        bookKey: downloadKey,
+                        onDownload: () => scope.downloads.add(
+                          widget.addon,
+                          book,
+                          workKey: widget.workKey,
+                        ),
+                      );
+              }
+              if (download == null) return button;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: button),
+                      const SizedBox(width: 8),
+                      download,
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: DownloadStatus(bookKey: downloadKey),
+                  ),
+                ],
+              );
             },
           );
 
@@ -356,6 +427,14 @@ class _BookScreenState extends State<BookScreen> {
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 320),
                         child: play,
+                      ),
+                    ],
+                    // Which source plays, under the button that plays it.
+                    if (book != null && !book.isWork) ...[
+                      const SizedBox(height: 12),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: _sourcePicker(),
                       ),
                     ],
                   ],
@@ -395,8 +474,8 @@ class _BookScreenState extends State<BookScreen> {
                         const LinearProgressIndicator()
                       else ...[
                         if (!wide) play!,
-                        if (!book.isWork) ...[
-                          if (!wide) const SizedBox(height: 12),
+                        if (!wide && !book.isWork) ...[
+                          const SizedBox(height: 12),
                           _sourcePicker(),
                         ],
                       ],
@@ -478,13 +557,13 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   /// The library entry of a playable [book], and whether it is the one in the player.
+  /// A book only downloaded so far counts as not in the library.
   (LibraryEntry?, bool) _place(Book book) {
     final scope = AppScope.of(context);
     final entry = scope.library.find(widget.addon.id, book.id);
-    return (
-      entry,
-      entry != null && scope.player.current.value?.key == entry.key,
-    );
+    final isCurrent =
+        entry != null && scope.player.current.value?.key == entry.key;
+    return (isCurrent || entry?.started == true ? entry : null, isCurrent);
   }
 
   static String _duration(int minutes) =>
@@ -497,7 +576,7 @@ class _BookScreenState extends State<BookScreen> {
         earlier != null && scope.player.current.value?.key == earlier.key;
     final label = playing
         ? 'Open player'
-        : earlier != null && !earlier.finished
+        : earlier != null && !earlier.finished && earlier.started
         ? 'Resume'
         : _starting
         ? 'Finding a version…'
@@ -579,7 +658,9 @@ class _BookScreenState extends State<BookScreen> {
           final s = list.sources.first;
           return Text(
             'Plays from ${s.name}${s.description == null ? '' : ' · ${s.description}'}',
-            textAlign: TextAlign.center,
+            textAlign: MediaQuery.sizeOf(context).width >= 720
+                ? TextAlign.start
+                : TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

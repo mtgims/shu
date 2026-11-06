@@ -34,6 +34,29 @@ class PlayerSettings extends ChangeNotifier {
   bool get shakeToExtend => _prefs.getBool('shakeToExtend') ?? true;
   set shakeToExtend(bool on) => _setBool('shakeToExtend', on);
 
+  /// Downloads also run on mobile data (Android; elsewhere the network is never metered).
+  bool get downloadOnMobile => _prefs.getBool('downloadOnMobile') ?? false;
+  set downloadOnMobile(bool on) => _setBool('downloadOnMobile', on);
+
+  /// A book's download is deleted when it is finished.
+  bool get deleteFinishedDownloads =>
+      _prefs.getBool('deleteFinishedDownloads') ?? false;
+  set deleteFinishedDownloads(bool on) =>
+      _setBool('deleteFinishedDownloads', on);
+
+  /// Coming back to a chapter left before its end goes on where it was left.
+  bool get rememberChapterPlaces =>
+      _prefs.getBool('rememberChapterPlaces') ?? true;
+  set rememberChapterPlaces(bool on) => _setBool('rememberChapterPlaces', on);
+
+  /// Wide windows: the side rail with labels beside its icons (only where there is room).
+  bool get railExtended => _prefs.getBool('railExtended') ?? true;
+  set railExtended(bool on) => _setBool('railExtended', on);
+
+  /// Wide windows: the library as a grid of covers instead of a list.
+  bool get libraryGrid => _prefs.getBool('libraryGrid') ?? false;
+  set libraryGrid(bool on) => _setBool('libraryGrid', on);
+
   double get speed => _prefs.getDouble('speed') ?? 1.0;
 
   /// Read when the player starts; the player reports changes itself (no notification).

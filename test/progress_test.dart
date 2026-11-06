@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:audiobooks/addons/models.dart';
+import 'package:audiobooks/library/library_store.dart';
 import 'package:audiobooks/sources/audiobookshelf.dart';
 import 'package:audiobooks/sources/jellyfin.dart';
 import 'package:audiobooks/sources/server.dart';
+import 'package:audiobooks/widgets/book_tiles.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -205,6 +207,59 @@ void main() {
         '/UserItems/f3/UserData',
       ]);
       expect(sent.values.every((d) => d['Played'] == true), isTrue);
+    });
+  });
+
+  group('time left', () {
+    LibraryEntry entryAt(int chapter, {Book of = book}) =>
+        LibraryEntry(addonId: 'a', book: of, chapterIndex: chapter);
+
+    test('counts the rest of the book from the position', () {
+      expect(
+        entryAt(0).timeLeftAt(const Duration(seconds: 30)),
+        const Duration(seconds: 270),
+      );
+      // Inside the file with two chapters: positions count from the file's start.
+      expect(
+        entryAt(2).timeLeftAt(const Duration(seconds: 50)),
+        const Duration(seconds: 150),
+      );
+      expect(
+        entryAt(3).timeLeftAt(const Duration(seconds: 100)),
+        Duration.zero,
+      );
+      expect(
+        entryAt(0).progressAt(const Duration(seconds: 50)),
+        closeTo(50 / 300, 0.001),
+      );
+    });
+
+    test('is unknown when a chapter has no length', () {
+      const unknown = Book(
+        id: 'u',
+        title: 'U',
+        chapters: [
+          Chapter(id: '1', title: '1', duration: 100),
+          Chapter(id: '2', title: '2'),
+        ],
+      );
+      final e = entryAt(0, of: unknown);
+      expect(e.timeLeftAt(const Duration(seconds: 10)), isNull);
+      // Progress then counts chapters, with the player's file length for the current one.
+      expect(
+        e.progressAt(
+          const Duration(seconds: 50),
+          chapterLength: const Duration(seconds: 100),
+        ),
+        closeTo(0.25, 0.001),
+      );
+    });
+
+    test('lengths read in words', () {
+      expect(formatLength(const Duration(hours: 4, minutes: 12)), '4 h 12 min');
+      expect(formatLength(const Duration(hours: 2)), '2 h');
+      expect(formatLength(const Duration(minutes: 38)), '38 min');
+      expect(formatLength(const Duration(seconds: 20)), '1 min');
     });
   });
 }

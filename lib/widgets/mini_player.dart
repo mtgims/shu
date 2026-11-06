@@ -4,8 +4,10 @@ import '../app.dart';
 import '../library/library_store.dart';
 import '../player/audiobook_player.dart';
 import '../screens/now_playing_screen.dart';
+import '../theme.dart';
 import 'adaptive.dart';
 import 'cover.dart';
+import 'cover_colors.dart';
 
 /// The bar showing the current book: on phones a small one above the navigation (tap it for the
 /// full player), in wide windows a full player bar.
@@ -20,67 +22,97 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, entry, _) {
         if (entry == null) return const SizedBox.shrink();
         if (isWide(context)) return _PlayerBar(player: player, entry: entry);
-        final theme = Theme.of(context);
-        return Material(
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: InkWell(
-            onTap: () => Navigator.of(context).push(NowPlayingScreen.route()),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ProgressLine(player: player),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                  child: Row(
-                    children: [
-                      Hero(
-                        tag: playerCoverTag,
-                        transitionOnUserGestures: true,
-                        child: BookCover(
-                          title: entry.book.title,
-                          url: entry.book.cover,
-                          size: 44,
-                          radius: 6,
-                        ),
+        // A card floating above the navigation, the progress along its bottom edge, in the
+        // colours of the book's cover (the player's too).
+        return _SwipeAway(
+          key: ValueKey(entry.key),
+          onGone: player.stop,
+          child: CoverTheme(
+            url: entry.book.cover,
+            child: Builder(
+              builder: (context) {
+                final theme = Theme.of(context);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: Material(
+                    color: Color.alphaBlend(
+                      theme.colorScheme.primaryContainer.withValues(
+                        alpha: 0.45,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              entry.book.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall,
+                      theme.colorScheme.surfaceContainerHigh,
+                    ),
+                    elevation: 3,
+                    borderRadius: BorderRadius.circular(14),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () =>
+                          Navigator.of(context).push(NowPlayingScreen.route()),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 8, 4, 6),
+                            child: Row(
+                              children: [
+                                Hero(
+                                  tag: playerCoverTag,
+                                  transitionOnUserGestures: true,
+                                  child: BookCover(
+                                    title: entry.book.title,
+                                    url: entry.book.cover,
+                                    size: 40,
+                                    radius: 8,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.book.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: bookTitle(
+                                          theme.textTheme.titleSmall,
+                                        ),
+                                      ),
+                                      _StatusLine(player: player, entry: entry),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Back 15 seconds',
+                                  onPressed: player.rewind,
+                                  icon: const Icon(Icons.replay),
+                                ),
+                                StreamBuilder<bool>(
+                                  stream: player.playingStream,
+                                  initialData: player.playing,
+                                  builder: (_, snap) => IconButton(
+                                    tooltip: snap.data == true
+                                        ? 'Pause'
+                                        : 'Play',
+                                    onPressed: player.togglePlay,
+                                    icon: Icon(
+                                      snap.data == true
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      size: 32,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            _StatusLine(player: player, entry: entry),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Back 15 seconds',
-                        onPressed: player.rewind,
-                        icon: const Icon(Icons.replay),
-                      ),
-                      StreamBuilder<bool>(
-                        stream: player.playingStream,
-                        initialData: player.playing,
-                        builder: (_, snap) => IconButton(
-                          tooltip: snap.data == true ? 'Pause' : 'Play',
-                          onPressed: player.togglePlay,
-                          icon: Icon(
-                            snap.data == true
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            size: 32,
                           ),
-                        ),
+                          _ProgressLine(player: player),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         );
@@ -144,8 +176,8 @@ class _StatusLine extends StatelessWidget {
   }
 }
 
-/// Wide windows: every control at hand, as in desktop music players, so listening never needs
-/// the full-screen player. The book on the left opens it.
+/// Wide windows: every control at hand in one slim row, as in desktop music players, so
+/// listening never needs the full-screen player. The book on the left opens it.
 class _PlayerBar extends StatelessWidget {
   const _PlayerBar({required this.player, required this.entry});
   final AudiobookPlayer player;
@@ -157,12 +189,13 @@ class _PlayerBar extends StatelessWidget {
     final roomy = MediaQuery.sizeOf(context).width >= 1100;
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
-      // As tall as its contents, also in a page's bottom bar slot (which offers the whole height).
+      // As tall as its contents, also in a page's bottom bar slot (which offers the whole
+      // height): the column lets the row measure its children without that height.
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
               children: [
                 Expanded(
@@ -184,7 +217,7 @@ class _PlayerBar extends StatelessWidget {
                               child: BookCover(
                                 title: entry.book.title,
                                 url: entry.book.cover,
-                                size: 56,
+                                size: 44,
                                 radius: 6,
                               ),
                             ),
@@ -197,7 +230,9 @@ class _PlayerBar extends StatelessWidget {
                                     entry.book.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.titleSmall,
+                                    style: bookTitle(
+                                      theme.textTheme.titleSmall,
+                                    ),
                                   ),
                                   _StatusLine(player: player, entry: entry),
                                 ],
@@ -209,39 +244,73 @@ class _PlayerBar extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8),
+                PlayerTransport(player: player, entry: entry, compact: true),
+                const SizedBox(width: 8),
                 Expanded(
                   flex: 5,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PlayerTransport(
-                        player: player,
-                        entry: entry,
-                        compact: true,
-                      ),
-                      // Repaints often; keep it from repainting the rest of the bar.
-                      RepaintBoundary(
-                        child: PlayerSeekBar(player: player, compact: true),
-                      ),
-                    ],
+                  // Repaints often; keep it from repainting the rest of the bar.
+                  child: RepaintBoundary(
+                    child: PlayerSeekBar(player: player, compact: true),
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 3,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: roomy
-                        ? PlayerExtras(player: player)
-                        : const SizedBox.shrink(),
-                  ),
-                ),
+                if (roomy) ...[
+                  const SizedBox(width: 8),
+                  PlayerExtras(player: player),
+                ],
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The phone card, swiped sideways to stop playback. It goes at once: stopping takes a moment,
+/// and a swiped card left on screen in between is an error.
+class _SwipeAway extends StatefulWidget {
+  const _SwipeAway({super.key, required this.onGone, required this.child});
+  final Future<void> Function() onGone;
+  final Widget child;
+
+  @override
+  State<_SwipeAway> createState() => _SwipeAwayState();
+}
+
+class _SwipeAwayState extends State<_SwipeAway> {
+  bool _gone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_gone) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final stop = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.stop_circle_outlined,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Stop',
+            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+    return Dismissible(
+      key: const ValueKey('mini player'),
+      background: Align(alignment: Alignment.centerLeft, child: stop),
+      secondaryBackground: Align(alignment: Alignment.centerRight, child: stop),
+      onDismissed: (_) {
+        setState(() => _gone = true);
+        widget.onGone();
+      },
+      child: widget.child,
     );
   }
 }

@@ -278,7 +278,11 @@ class AddonStore extends ChangeNotifier {
     final trimmed = body.trimLeft();
     if (trimmed.startsWith('{')) {
       final json = jsonDecode(trimmed) as Map<String, dynamic>;
-      if (json['extensions'] is List) return _repository(uri, json);
+      if (json['extensions'] is List) {
+        final repo = _repository(uri, json);
+        await _rememberRepository(uri.toString(), repo.name);
+        return repo;
+      }
       if (json['protocol'] == 1) {
         final normalized = normalizeAddonUrl(uri.toString());
         final addon = InstalledAddon.remote(
@@ -345,6 +349,41 @@ class AddonStore extends ChangeNotifier {
   bool _noticeKnown(Manifest manifest) =>
       manifest.notice == null ||
       _prefs.getString('ext.notice.${manifest.id}') == manifest.notice;
+
+  static const _reposKey = 'repositories';
+
+  /// Repositories the user has opened, newest first, so they needn't paste the link again.
+  List<({String url, String name})> get repositories {
+    try {
+      final list = jsonDecode(_prefs.getString(_reposKey) ?? '[]') as List;
+      return [
+        for (final r in list.whereType<Map<String, dynamic>>())
+          if (r case {'url': final String url, 'name': final String name})
+            (url: url, name: name),
+      ];
+    } on FormatException {
+      return const [];
+    }
+  }
+
+  Future<void> _rememberRepository(String url, String name) =>
+      _saveRepositories([
+        (url: url, name: name),
+        ...repositories.where((r) => r.url != url),
+      ]);
+
+  Future<void> forgetRepository(String url) async {
+    await _saveRepositories([...repositories.where((r) => r.url != url)]);
+    notifyListeners();
+  }
+
+  Future<void> _saveRepositories(List<({String url, String name})> list) =>
+      _prefs.setString(
+        _reposKey,
+        jsonEncode([
+          for (final r in list) {'url': r.url, 'name': r.name},
+        ]),
+      );
 
   Repository _repository(Uri index, Map<String, dynamic> json) =>
       Repository(json['name'] as String? ?? index.host, [

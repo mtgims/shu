@@ -6,6 +6,7 @@ import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../library/library_store.dart';
 import '../screens/book_screen.dart';
+import '../theme.dart';
 import 'adaptive.dart';
 import 'cover.dart';
 
@@ -64,7 +65,7 @@ class BookListTile extends StatelessWidget {
                     book.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall,
+                    style: bookTitle(theme.textTheme.titleSmall),
                   ),
                   if (book.byline.isNotEmpty)
                     Text(
@@ -144,8 +145,10 @@ class BookCard extends StatelessWidget {
                 title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: bookTitle(
+                  theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               if (subtitle != null)
@@ -292,6 +295,22 @@ class _CardStripState extends State<CardStrip> {
       ),
     );
   }
+}
+
+/// "4 h 12 min left" for a book under way at [speed], or null when the length isn't known (or
+/// the book isn't started or is finished: those say so in words).
+String? timeLeftText(LibraryEntry entry, double speed) {
+  if (entry.finished || !entry.started) return null;
+  final left = entry.timeLeftAt(entry.position);
+  return left == null ? null : '${formatLength(left * (1 / speed))} left';
+}
+
+/// A length in words: "4 h 12 min", "38 min", "1 min" (never "0 min").
+String formatLength(Duration d) {
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  if (h == 0) return '${m < 1 ? 1 : m} min';
+  return m == 0 ? '$h h' : '$h h $m min';
 }
 
 String formatDuration(Duration d) {

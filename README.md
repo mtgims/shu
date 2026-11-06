@@ -27,10 +27,18 @@ server, and can be extended with small JavaScript extensions.
 - Audiobookshelf and Jellyfin servers: browse, search and stream your libraries, with your
   progress kept in step with the server
 - Browse and search across all of them at once
-- A library that remembers where you stopped in every book
-- Chapters, bookmarks, speed from 0.5× to 3×, 15/30 second skips, and a step back after a pause
+- A library that remembers where you stopped in every book, as a list or a grid of covers
+- Downloads for listening offline; on Android they go on with the screen off and wait for Wi-Fi
+  unless you allow mobile data
+- A player that shows the whole book: a bar split by chapter, how much you've heard and the time
+  left at your speed. Tap the cover to pause, swipe it to change chapter
+- Chapters (each one remembers where you left it), bookmarks, speed from 0.5× to 3×, 15/30
+  second skips, and a step back after a pause
 - A sleep timer that fades out, with +5 minutes from the notification or a shake
-- Background playback with lock screen controls and Android Auto on Android, media keys on Linux
+- Driving mode on phones: one big play/pause and a big "back 15 s"; after 15 seconds it goes
+  black (volume up then plays or pauses, volume down goes back)
+- Background playback with controls on the lock screen, in quick settings and in Android Auto;
+  media keys and desktop media widgets (MPRIS) on Linux
 - Keyboard use on Linux and Windows: Space plays and pauses, ← and → skip, ↑ ↓ and Page Up/Down
   scroll, Ctrl+F searches and Ctrl+1 to Ctrl+4 open the tabs
 
@@ -121,4 +129,7 @@ build Shu and run the tests.
 
 Shu is free software under the [GNU General Public License v3.0](LICENSE) or any later version.
 The downloads include [TorrServer](https://github.com/YouROK/TorrServer), also GPL-3.0, whose
-source is on its page; `tool/torrserver.sh` names the exact release.
+source is on its page; `tool/torrserver.sh` names the exact release. Book titles are set in
+[Literata](https://github.com/googlefonts/literata), under the SIL Open Font License
+([assets/fonts/OFL.txt](assets/fonts/OFL.txt)).
+

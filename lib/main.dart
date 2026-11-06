@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'addons/addon_store.dart';
 import 'app.dart';
+import 'downloads/download_store.dart';
 import 'library/library_store.dart';
 import 'peer/torrent_engine.dart';
 import 'player/audiobook_player.dart';
@@ -110,6 +111,8 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
           ),
         );
 
+  player.downloads = await DownloadStore.load(prefs, library, addons, settings);
+
   player.onServerMove = (from, before) =>
       messengerKey.currentState?.showSnackBar(
         SnackBar(
@@ -137,6 +140,7 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
     addons: addons,
     library: library,
     player: player,
+    downloads: player.downloads!,
     updater: Updater(prefs),
   );
 }

@@ -534,9 +534,33 @@ class TorrentEngine {
     'EnableLPD': false,
   };
 
+  /// Downloads reading from the engine: it stays up while there are any.
+  int _holds = 0;
+  void hold() {
+    _holds++;
+    _idle?.cancel();
+  }
+
+  void release() {
+    _holds--;
+    _scheduleIdle();
+  }
+
+  /// The book behind [url] is downloaded: the engine's copy of its torrent can go, unless it
+  /// is playing.
+  Future<void> downloaded(String url) async {
+    final hash = hashOf(url);
+    if (hash != null && hash != _playing) await forget(hash);
+  }
+
   void _scheduleIdle() {
     _idle?.cancel();
-    if (_base == null || _playing != null || _options.shareAfter) return;
+    if (_base == null ||
+        _playing != null ||
+        _holds > 0 ||
+        _options.shareAfter) {
+      return;
+    }
     _idle = Timer(idleTimeout, stop);
   }
 

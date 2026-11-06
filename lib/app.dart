@@ -3,11 +3,13 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 
 import 'addons/addon_store.dart';
+import 'downloads/download_store.dart';
 import 'library/library_store.dart';
 import 'player/audiobook_player.dart';
 import 'screens/addons_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
+import 'screens/now_playing_screen.dart' show PlayerRoute, openNextInSeries;
 import 'screens/search_screen.dart';
 import 'theme.dart';
 import 'updates/updater.dart';
@@ -22,6 +24,7 @@ class AppScope extends InheritedWidget {
     required this.addons,
     required this.library,
     required this.player,
+    required this.downloads,
     required this.updater,
     required super.child,
   });
@@ -29,6 +32,7 @@ class AppScope extends InheritedWidget {
   final AddonStore addons;
   final LibraryStore library;
   final AudiobookPlayer player;
+  final DownloadStore downloads;
   final Updater updater;
 
   static AppScope of(BuildContext context) =>
@@ -73,6 +77,32 @@ bool goToTab(int index) {
 
 final _dialogs = _DialogObserver();
 
+final _player = _PlayerObserver();
+
+/// Whether the full player is open, so the side rail beside the pages can make way for it.
+class _PlayerObserver extends NavigatorObserver {
+  final open = ValueNotifier<bool>(false);
+  var _count = 0;
+
+  void _changed(Route<dynamic> route, int by) {
+    if (route is! PlayerRoute) return;
+    _count += by;
+    open.value = _count > 0;
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _changed(route, 1);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _changed(route, -1);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _changed(route, -1);
+}
+
 /// Follows the dialogs and menus over the pages, so the side rail beside them can dim and stop
 /// taking clicks the way the pages under a dialog's barrier do.
 class _DialogObserver extends NavigatorObserver {
@@ -110,12 +140,14 @@ class AudiobooksApp extends StatelessWidget {
     required this.addons,
     required this.library,
     required this.player,
+    required this.downloads,
     required this.updater,
   });
 
   final AddonStore addons;
   final LibraryStore library;
   final AudiobookPlayer player;
+  final DownloadStore downloads;
   final Updater updater;
 
   @override
@@ -124,12 +156,13 @@ class AudiobooksApp extends StatelessWidget {
       addons: addons,
       library: library,
       player: player,
+      downloads: downloads,
       updater: updater,
       child: MaterialApp(
         title: 'Shu',
         scaffoldMessengerKey: messengerKey,
         navigatorKey: navigatorKey,
-        navigatorObservers: [_dialogs],
+        navigatorObservers: [_dialogs, _player],
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
@@ -145,10 +178,23 @@ class AudiobooksApp extends StatelessWidget {
           // keeps the pages when the window crosses the width.
           child: Row(
             children: [
-              if (isWide(context)) ...[
-                const _SideRail(),
-                const VerticalDivider(width: 1),
-              ],
+              if (isWide(context))
+                // The full player has the whole window: the rail slides away while it shows.
+                ValueListenableBuilder(
+                  valueListenable: _player.open,
+                  builder: (context, open, rail) => ClipRect(
+                    child: AnimatedAlign(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: open ? 0 : 1,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      child: rail,
+                    ),
+                  ),
+                  child: const Row(
+                    children: [_SideRail(), VerticalDivider(width: 1)],
+                  ),
+                ),
               Expanded(key: const ValueKey('pages'), child: child!),
             ],
           ),
@@ -158,45 +204,132 @@ class AudiobooksApp extends StatelessWidget {
   }
 }
 
-class _SideRail extends StatelessWidget {
+/// Wide windows: the tabs down the side, with labels beside the icons or icons only.
+class _SideRail extends StatefulWidget {
   const _SideRail();
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: _dialogs.open,
-    builder: (context, barrier, rail) => AbsorbPointer(
-      absorbing: barrier != null,
-      child: Stack(
-        children: [
-          rail!,
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                color: barrier ?? Colors.transparent,
+  State<_SideRail> createState() => _SideRailState();
+}
+
+class _SideRailState extends State<_SideRail> {
+  // The rail sits beside the navigator, so its tooltips need an overlay of their own.
+  // Goes with its overlay when the window gets narrow (nothing else holds it).
+  final _entry = OverlayEntry(builder: (_) => const _RailBody());
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = AppScope.of(context).player.settings;
+    return ValueListenableBuilder(
+      valueListenable: _dialogs.open,
+      builder: (context, barrier, rail) => AbsorbPointer(
+        absorbing: barrier != null,
+        child: Stack(
+          children: [
+            rail!,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  color: barrier ?? Colors.transparent,
+                ),
               ),
             ),
+          ],
+        ),
+      ),
+      // An overlay takes all the width it is offered: give it the rail's, growing with it.
+      child: ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) => AnimatedContainer(
+          duration: kThemeAnimationDuration,
+          width: _extended(context) ? 200 : 80,
+          child: Overlay(initialEntries: [_entry]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Labels beside the icons only where the pages keep enough room, and when chosen.
+bool _roomyForRail(BuildContext context) =>
+    MediaQuery.sizeOf(context).width >= 1100;
+
+bool _extended(BuildContext context) =>
+    _roomyForRail(context) && AppScope.of(context).player.settings.railExtended;
+
+class _RailBody extends StatelessWidget {
+  const _RailBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = AppScope.of(context).player.settings;
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge([currentTab, settings]),
+      builder: (context, _) {
+        final extended = _extended(context);
+        return ColoredBox(
+          color:
+              theme.navigationRailTheme.backgroundColor ??
+              theme.colorScheme.surface,
+          child: Column(
+            children: [
+              Expanded(
+                child: NavigationRail(
+                  selectedIndex: currentTab.value,
+                  onDestinationSelected: goToTab,
+                  extended: extended,
+                  minExtendedWidth: 200,
+                  labelType: NavigationRailLabelType.none,
+                  leading: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      // The app's icon is this character.
+                      extended ? '书  Shu' : '书',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  destinations: [
+                    for (final t in _tabs)
+                      NavigationRailDestination(
+                        // Icons only: the name shows on hover.
+                        icon: Tooltip(
+                          message: extended ? '' : t.label,
+                          child: Icon(t.icon),
+                        ),
+                        selectedIcon: Tooltip(
+                          message: extended ? '' : t.label,
+                          child: Icon(t.selectedIcon),
+                        ),
+                        label: Text(t.label),
+                      ),
+                  ],
+                ),
+              ),
+              if (_roomyForRail(context))
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Align(
+                    alignment: extended
+                        ? Alignment.centerLeft
+                        : Alignment.center,
+                    child: IconButton(
+                      tooltip: extended ? 'Collapse' : 'Expand',
+                      icon: Icon(extended ? Icons.menu_open : Icons.menu),
+                      onPressed: () => settings.railExtended = !extended,
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
-      ),
-    ),
-    child: ValueListenableBuilder(
-      valueListenable: currentTab,
-      builder: (context, tab, _) => NavigationRail(
-        selectedIndex: tab,
-        onDestinationSelected: goToTab,
-        labelType: NavigationRailLabelType.all,
-        destinations: [
-          for (final t in _tabs)
-            NavigationRailDestination(
-              icon: Icon(t.icon),
-              selectedIcon: Icon(t.selectedIcon),
-              label: Text(t.label),
-            ),
-        ],
-      ),
-    ),
-  );
+        );
+      },
+    );
+  }
 }
 
 /// Bottom navigation on phones (the side rail is beside the pages), the mini player above the
@@ -238,8 +371,35 @@ class HomeShellState extends State<HomeShell> {
     _lifecycle;
   }
 
+  /// Undoes the listener that announces the next book of a series once a book has ended.
+  VoidCallback? _stopSuggesting;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_stopSuggesting != null) return;
+    final next = AppScope.of(context).player.nextInSeries;
+    void suggest() {
+      final n = next.value;
+      if (n == null) return;
+      messengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text('Next in the series: ${n.book.title}'),
+          action: SnackBarAction(
+            label: 'Open',
+            onPressed: () => openNextInSeries(n.addon, n.book),
+          ),
+        ),
+      );
+    }
+
+    next.addListener(suggest);
+    _stopSuggesting = () => next.removeListener(suggest);
+  }
+
   @override
   void dispose() {
+    _stopSuggesting?.call();
     _lifecycle.dispose();
     _searchFocus.dispose();
     super.dispose();

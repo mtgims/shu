@@ -446,6 +446,20 @@ class SourceList {
 
 typedef CatalogPage = ({List<BookSummary> books, bool hasMore});
 
+/// The other books of a book's series in reading order, and [at]: how many of them come before
+/// the book itself (so `books[at]` is the next one), when the source knows.
+typedef Series = ({List<BookSummary> books, int? at});
+
+const noSeries = (books: <BookSummary>[], at: null);
+
+Series seriesFromJson(Map<String, dynamic> json) => (
+  books: catalogPageFromJson(json).books,
+  at: switch (json['at']) {
+    final num at when at >= 0 => at.toInt(),
+    _ => null,
+  },
+);
+
 CatalogPage catalogPageFromJson(Map<String, dynamic> json) => (
   books: (json['books'] as List? ?? const [])
       .whereType<Map<String, dynamic>>()

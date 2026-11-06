@@ -25,8 +25,9 @@ abstract interface class AddonBackend {
   /// Playable versions of a book from a catalog extension (empty unless [Manifest.releases]).
   Future<List<BookSummary>> releases(Book work);
 
-  /// The other books of a catalog book's series, in reading order (empty when unknown).
-  Future<List<BookSummary>> series(String bookId);
+  /// The other books of a catalog book's series, in reading order, and where the book sits among
+  /// them ([noSeries] when unknown).
+  Future<Series> series(String bookId);
 
   /// A source's playable URL, or "still downloading".
   Future<Resolved> resolve(Source source);

@@ -504,7 +504,7 @@ class JellyfinBackend extends ServerBackend {
   Future<List<BookSummary>> releases(Book work) async => const [];
 
   @override
-  Future<List<BookSummary>> series(String bookId) async => const [];
+  Future<Series> series(String bookId) async => noSeries;
 
   @override
   void dispose() => _http.close();
