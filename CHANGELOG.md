@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 - 2026-11-13
+
+### Changed
+- On a phone the player grows out of the player bar and shrinks back into it, the cover moving
+  with it, and it closes the way it opened, whether by the button, Back or a drag down
+
+### Fixed
+- Dragging the player down follows your finger, and letting go finishes the move instead of
+  jumping away
+- The player's cover no longer leaves its shadow behind while it moves
+
 ## 0.7.0 - 2026-11-06
 
 ### New

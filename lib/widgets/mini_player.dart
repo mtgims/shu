@@ -4,6 +4,7 @@ import '../app.dart';
 import '../library/library_store.dart';
 import '../player/audiobook_player.dart';
 import '../screens/now_playing_screen.dart';
+import '../screens/player_cover.dart' show straightFlight;
 import '../theme.dart';
 import 'adaptive.dart';
 import 'cover.dart';
@@ -27,14 +28,15 @@ class MiniPlayer extends StatelessWidget {
         return _SwipeAway(
           key: ValueKey(entry.key),
           onGone: player.stop,
-          child: CoverTheme(
-            url: entry.book.cover,
-            child: Builder(
-              builder: (context) {
-                final theme = Theme.of(context);
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                  child: Material(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: CoverTheme(
+              url: entry.book.cover,
+              // Its context is the card's: the player grows out of it.
+              child: Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  return Material(
                     color: Color.alphaBlend(
                       theme.colorScheme.primaryContainer.withValues(
                         alpha: 0.45,
@@ -46,7 +48,8 @@ class MiniPlayer extends StatelessWidget {
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
                       onTap: () =>
-                          Navigator.of(context).push(NowPlayingScreen.route()),
+                          Navigator.of(context)
+                              .push(NowPlayingScreen.route(from: context)),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -57,6 +60,7 @@ class MiniPlayer extends StatelessWidget {
                                 Hero(
                                   tag: playerCoverTag,
                                   transitionOnUserGestures: true,
+                                  createRectTween: straightFlight,
                                   child: BookCover(
                                     title: entry.book.title,
                                     url: entry.book.cover,
@@ -110,9 +114,9 @@ class MiniPlayer extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         );
@@ -214,6 +218,7 @@ class _PlayerBar extends StatelessWidget {
                             Hero(
                               tag: playerCoverTag,
                               transitionOnUserGestures: true,
+                              createRectTween: straightFlight,
                               child: BookCover(
                                 title: entry.book.title,
                                 url: entry.book.cover,

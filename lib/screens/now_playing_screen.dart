@@ -33,7 +33,8 @@ export 'player_extras.dart' show PlayerExtras;
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({super.key});
 
-  static Route<void> route() => PlayerRoute();
+  /// [from]: the mini player's card the player grows out of.
+  static Route<void> route({BuildContext? from}) => PlayerRoute(from: from);
 
   @override
   Widget build(BuildContext context) {
@@ -709,10 +710,14 @@ class _OnNewBookState extends State<_OnNewBook> {
   Widget build(BuildContext context) => widget.builder(context, _entry);
 }
 
-/// Opens the player: it rises from the player bar while the cover flies into place. On phones it
-/// slides up from the bottom and a drag down puts it back.
+/// Opens the player. On phones it grows out of the mini player and shrinks back into it, the
+/// cover moving with it, and a drag down takes it back the same way; in wide windows it rises a
+/// little and fades in where it will be.
 class PlayerRoute extends PageRoute<void> {
-  PlayerRoute() : super(fullscreenDialog: true);
+  /// [from] is the mini player's card; without one the page rises from the bottom edge.
+  PlayerRoute({this.from}) : super(fullscreenDialog: true);
+
+  final BuildContext? from;
 
   /// While the route moves, the page is drawn once and that picture moves: redrawing the whole
   /// player (cover, blurred background) on every frame stutters on big screens.
@@ -753,10 +758,45 @@ class PlayerRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 450);
+  Duration get transitionDuration => const Duration(milliseconds: 400);
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 320);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 350);
+
+  /// The controller itself eases, so the page and the cover's flight (which follows the route's
+  /// animation as is) move as one, and a finger can take over or let go anywhere. A curve laid
+  /// over the animation changes when the direction does: letting go of a drag made the page jump.
+  static const _ease = Easing.emphasizedDecelerate;
+
+  @override
+  TickerFuture didPush() {
+    super.didPush();
+    return controller!.animateTo(1, duration: transitionDuration, curve: _ease);
+  }
+
+  @override
+  bool didPop(void result) {
+    final popped = super.didPop(result);
+    controller!.animateBack(
+      0,
+      duration: reverseTransitionDuration * controller!.value,
+      curve: _ease,
+    );
+    return popped;
+  }
+
+  /// The mini player's card, in the navigator's coordinates, while it is on screen; otherwise a
+  /// line along the bottom edge.
+  Rect _origin(Size screen) {
+    final card = from != null && from!.mounted
+        ? from!.findRenderObject()
+        : null;
+    final ancestor = navigator?.context.findRenderObject();
+    if (card is RenderBox && card.attached && card.hasSize) {
+      return card.localToGlobal(Offset.zero, ancestor: ancestor) & card.size;
+    }
+    return Rect.fromLTWH(0, screen.height, screen.width, 0);
+  }
 
   @override
   Widget buildPage(
@@ -777,52 +817,51 @@ class PlayerRoute extends PageRoute<void> {
       mode: SnapshotMode.permissive,
       child: child,
     );
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Easing.emphasizedDecelerate,
-      reverseCurve: Easing.emphasizedAccelerate,
-    );
-    // Closing by button or Back on a phone also fades where it is: the whole page sliding down
-    // beside the cover flying into the bar looked like two things leaving. A finger that
-    // drags it down still moves the page.
-    final fades =
-        isWide(context) ||
-        (animation.status == AnimationStatus.reverse &&
-            !_dragging &&
-            !_closedByDrag);
-    if (fades) {
+    if (isWide(context)) {
       // The player rises a little and fades in where it will be (and back out).
       return FadeTransition(
-        opacity: curved,
+        opacity: animation,
         child: SlideTransition(
           position: Tween(
             begin: const Offset(0, 0.04),
             end: Offset.zero,
-          ).animate(curved),
+          ).animate(animation),
           child: moving,
         ),
       );
     }
-    return SlideTransition(
-      position: Tween(
-        begin: const Offset(0, 1),
-        end: Offset.zero,
-      ).animate(curved),
-      child: GestureDetector(
-        onVerticalDragStart: (_) => _grab(),
-        onVerticalDragUpdate: (d) => _drag(context, d.primaryDelta ?? 0),
-        onVerticalDragEnd: (d) => _release(d.primaryVelocity ?? 0),
-        onVerticalDragCancel: () => _release(0),
-        child: moving,
+    // The card grows into the page, its top edge leading and the content riding on it, as
+    // the cover flies on the same value; the page shows through only at the start, over the
+    // mini player.
+    final screen = MediaQuery.sizeOf(context);
+    final origin = _origin(screen);
+    final t = animation.value;
+    final rect = Rect.lerp(origin, Offset.zero & screen, t)!;
+    return GestureDetector(
+      onVerticalDragStart: (_) => _grab(),
+      onVerticalDragUpdate: (d) => _drag(origin.top, d.primaryDelta ?? 0),
+      onVerticalDragEnd: (d) => _release(d.primaryVelocity ?? 0),
+      onVerticalDragCancel: () => _release(0),
+      child: Opacity(
+        opacity: const Interval(0, 0.3).transform(t),
+        child: Transform.translate(
+          offset: Offset(0, rect.top),
+          child: ClipRRect(
+            clipper: _Outline(
+              RRect.fromRectAndRadius(
+                rect.translate(0, -rect.top),
+                Radius.circular(14 * (1 - t)),
+              ),
+            ),
+            child: moving,
+          ),
+        ),
       ),
     );
   }
 
   /// Whether a drag is under way: a tap also ends in a "cancel", with nothing to undo.
   bool _dragging = false;
-
-  /// The drag closed the page: it slides on down rather than switching to a fade.
-  bool _closedByDrag = false;
 
   void _grab() {
     _dragging = true;
@@ -831,26 +870,40 @@ class PlayerRoute extends PageRoute<void> {
     navigator?.didStartUserGesture();
   }
 
-  /// Follows the finger down (and back up).
-  void _drag(BuildContext context, double dy) {
+  /// The page's top edge follows the finger down (and back up) over [travel], the way to the
+  /// mini player.
+  void _drag(double travel, double dy) {
     if (!_dragging) return;
-    final height = MediaQuery.sizeOf(context).height;
-    controller!.value -= dy / height;
+    controller!.value -= dy / travel;
   }
 
   /// Closes after a flick or past a third of the way down, otherwise springs back.
   void _release(double velocity) {
     if (!_dragging) return;
     _dragging = false;
-    final close = velocity > 700 || controller!.value < 0.67;
-    if (close) {
-      _closedByDrag = true;
+    if (velocity > 700 || controller!.value < 0.67) {
       navigator?.pop();
     } else {
-      controller!.forward();
+      controller!.animateTo(
+        1,
+        duration: transitionDuration * (1 - controller!.value),
+        curve: _ease,
+      );
     }
     navigator?.didStopUserGesture();
   }
+}
+
+/// The player page's outline while it grows out of the mini player.
+class _Outline extends CustomClipper<RRect> {
+  _Outline(this.outline);
+  final RRect outline;
+
+  @override
+  RRect getClip(Size size) => outline;
+
+  @override
+  bool shouldReclip(_Outline old) => old.outline != outline;
 }
 
 /// Once the book has ended: the next one of its series, to open (its page, where Play picks a

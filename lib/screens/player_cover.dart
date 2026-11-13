@@ -8,6 +8,11 @@ import '../player/audiobook_player.dart';
 import '../widgets/adaptive.dart';
 import '../widgets/cover.dart';
 
+/// The flying cover's path: straight, so it moves with the player page rather than on an arc of
+/// its own. Both ends of the flight set it (a flight takes its path from where it lands).
+RectTween straightFlight(Rect? begin, Rect? end) =>
+    RectTween(begin: begin, end: end);
+
 /// The player's cover. It sits back a little while paused and comes forward while playing; a
 /// tap plays or pauses. On phones a sideways swipe changes chapter: the cover follows the finger,
 /// tilting, and past a third of its width a tick says letting go will skip.
@@ -97,25 +102,30 @@ class _PlayerCoverState extends State<PlayerCover>
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 450),
-                        curve: Curves.easeOutCubic,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: scheme.shadow.withValues(
-                                alpha: playing ? 0.3 : 0.15,
+                      // The shadow is inside the hero: left on the page, it was a dark
+                      // patch moving with the page while the cover flew.
+                      Hero(
+                        tag: widget.heroTag,
+                        transitionOnUserGestures: true,
+                        // The player's route eases its own animation (PlayerRoute).
+                        curve: Curves.linear,
+                        createRectTween: straightFlight,
+                        flightShuttleBuilder: widget.flightShuttleBuilder,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 450),
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: scheme.shadow.withValues(
+                                  alpha: playing ? 0.3 : 0.15,
+                                ),
+                                blurRadius: playing ? 36 : 12,
+                                offset: Offset(0, playing ? 14 : 4),
                               ),
-                              blurRadius: playing ? 36 : 12,
-                              offset: Offset(0, playing ? 14 : 4),
-                            ),
-                          ],
-                        ),
-                        child: Hero(
-                          tag: widget.heroTag,
-                          transitionOnUserGestures: true,
-                          flightShuttleBuilder: widget.flightShuttleBuilder,
+                            ],
+                          ),
                           child: BookCover(
                             title: widget.entry.book.title,
                             url: widget.entry.book.cover,
