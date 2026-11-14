@@ -4,14 +4,15 @@ import '../app.dart';
 import '../library/library_store.dart';
 import '../player/audiobook_player.dart';
 import '../screens/now_playing_screen.dart';
+import '../screens/player_sheet.dart';
 import '../screens/player_cover.dart' show straightFlight;
 import '../theme.dart';
 import 'adaptive.dart';
 import 'cover.dart';
 import 'cover_colors.dart';
 
-/// The bar showing the current book: on phones a small one above the navigation (tap it for the
-/// full player), in wide windows a full player bar.
+/// The bar showing the current book: on phones a small one above the navigation (tap it or pull
+/// it up for the full player), in wide windows a full player bar.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
 
@@ -23,51 +24,100 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, entry, _) {
         if (entry == null) return const SizedBox.shrink();
         if (isWide(context)) return _PlayerBar(player: player, entry: entry);
-        // A card floating above the navigation, the progress along its bottom edge, in the
-        // colours of the book's cover (the player's too).
         return _SwipeAway(
           key: ValueKey(entry.key),
           onGone: player.stop,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: CoverTheme(
-              url: entry.book.cover,
-              // Its context is the card's: the player grows out of it.
-              child: Builder(
-                builder: (context) {
-                  final theme = Theme.of(context);
-                  return Material(
-                    color: Color.alphaBlend(
-                      theme.colorScheme.primaryContainer.withValues(
-                        alpha: 0.45,
-                      ),
-                      theme.colorScheme.surfaceContainerHigh,
-                    ),
-                    elevation: 3,
-                    borderRadius: BorderRadius.circular(14),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () =>
-                          Navigator.of(context)
-                              .push(NowPlayingScreen.route(from: context)),
+            child: _Unfolds(
+              child: MiniCard(player: player, entry: entry),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The phone's mini player card, floating above the navigation in the colours of the book's
+/// cover, the progress along its bottom edge. It is also the player folded up: the player's
+/// sheet draws it [flying] (its cover in the air, its [row] fading, [rowWidth] wide) while it
+/// unfolds.
+class MiniCard extends StatelessWidget {
+  const MiniCard({
+    super.key,
+    required this.player,
+    required this.entry,
+    this.flying = false,
+    this.row = 1,
+    this.rowWidth,
+  });
+
+  final AudiobookPlayer player;
+  final LibraryEntry entry;
+  final bool flying;
+  final double row;
+  final double? rowWidth;
+
+  /// Where the cover sits in the card: the player sheet moves it from here.
+  static const coverRect = Rect.fromLTWH(8, 8, 40, 40);
+
+  @override
+  Widget build(BuildContext context) {
+    return CoverTheme(
+      url: entry.book.cover,
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Material(
+            color: Color.alphaBlend(
+              theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
+              theme.colorScheme.surfaceContainerHigh,
+            ),
+            elevation: 3,
+            borderRadius: BorderRadius.circular(14),
+            clipBehavior: Clip.antiAlias,
+            child: IgnorePointer(
+              ignoring: flying,
+              child: InkWell(
+                onTap: () => openPlayer(context),
+                // Flying, the row keeps the card's width while the sheet is wider: the title
+                // would be cut at another place, then again as the mini player takes over.
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  heightFactor: 1,
+                  child: SizedBox(
+                    width: rowWidth,
+                    child: Opacity(
+                      opacity: row,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 8, 4, 6),
+                            padding: EdgeInsets.fromLTRB(
+                              coverRect.left,
+                              coverRect.top,
+                              4,
+                              6,
+                            ),
                             child: Row(
                               children: [
-                                Hero(
-                                  tag: playerCoverTag,
-                                  transitionOnUserGestures: true,
-                                  createRectTween: straightFlight,
-                                  child: BookCover(
-                                    title: entry.book.title,
-                                    url: entry.book.cover,
-                                    size: 40,
-                                    radius: 8,
+                                if (flying)
+                                  SizedBox.fromSize(size: coverRect.size)
+                                else
+                                  _CoverSpot(
+                                    child: Hero(
+                                      tag: playerCoverTag,
+                                      transitionOnUserGestures: true,
+                                      createRectTween: straightFlight,
+                                      child: BookCover(
+                                        title: entry.book.title,
+                                        url: entry.book.cover,
+                                        size: coverRect.width,
+                                        radius: 8,
+                                      ),
+                                    ),
                                   ),
-                                ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
@@ -114,15 +164,87 @@ class MiniPlayer extends StatelessWidget {
                         ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
+}
+
+/// Where the player unfolds from: the card tells its page's player sheet where it is, steps
+/// aside while the sheet is out (the sheet draws it then), and a finger pulling it up takes the
+/// sheet up with it.
+class _Unfolds extends StatefulWidget {
+  const _Unfolds({required this.child});
+  final Widget child;
+
+  @override
+  State<_Unfolds> createState() => _UnfoldsState();
+}
+
+class _UnfoldsState extends State<_Unfolds> {
+  PlayerSheetState? _sheet;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sheet = PlayerSheet.maybeOf(context)?..card = context;
+  }
+
+  @override
+  void dispose() {
+    if (_sheet?.card == context) _sheet!.card = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onVerticalDragStart: (_) => _sheet?.grab(),
+    onVerticalDragUpdate: (d) => _sheet?.dragBy(d.primaryDelta ?? 0),
+    onVerticalDragEnd: (d) => _sheet?.release(d.primaryVelocity ?? 0),
+    onVerticalDragCancel: () => _sheet?.release(0),
+    child: ValueListenableBuilder(
+      valueListenable: playerExpansion,
+      builder: (context, out, child) => Opacity(
+        opacity: out > 0 ? 0 : 1,
+        child: IgnorePointer(ignoring: out > 0, child: child),
+      ),
+      child: widget.child,
+    ),
+  );
+}
+
+/// The mini player's cover, made known to its page's player sheet, which moves a copy of it
+/// between here and the player.
+class _CoverSpot extends StatefulWidget {
+  const _CoverSpot({required this.child});
+  final Widget child;
+
+  @override
+  State<_CoverSpot> createState() => _CoverSpotState();
+}
+
+class _CoverSpotState extends State<_CoverSpot> {
+  PlayerSheetState? _sheet;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sheet = PlayerSheet.maybeOf(context)?..miniCover = context;
+  }
+
+  @override
+  void dispose() {
+    if (_sheet?.miniCover == context) _sheet!.miniCover = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _ProgressLine extends StatelessWidget {
@@ -209,8 +331,7 @@ class _PlayerBar extends StatelessWidget {
                     waitDuration: const Duration(milliseconds: 600),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () =>
-                          Navigator.of(context).push(NowPlayingScreen.route()),
+                      onTap: () => openPlayer(context),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Row(

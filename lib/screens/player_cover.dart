@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -25,6 +26,8 @@ class PlayerCover extends StatefulWidget {
     required this.heroTag,
     required this.flightShuttleBuilder,
     required this.overlay,
+    this.coverKey,
+    this.away,
   });
 
   final AudiobookPlayer player;
@@ -33,12 +36,19 @@ class PlayerCover extends StatefulWidget {
   final Object heroTag;
   final HeroFlightShuttleBuilder flightShuttleBuilder;
 
+  /// On the cover itself (see NowPlayingScreen.coverKey); [away] hides it.
+  final GlobalKey? coverKey;
+  final ValueListenable<bool>? away;
+
   /// Drawn over the cover's bottom (the loading and error messages).
   final Widget overlay;
 
   @override
   State<PlayerCover> createState() => _PlayerCoverState();
 }
+
+/// Never away: covers outside a player sheet.
+final _here = ValueNotifier(false);
 
 class _PlayerCoverState extends State<PlayerCover>
     with SingleTickerProviderStateMixin {
@@ -107,30 +117,36 @@ class _PlayerCoverState extends State<PlayerCover>
                       Hero(
                         tag: widget.heroTag,
                         transitionOnUserGestures: true,
-                        // The player's route eases its own animation (PlayerRoute).
+                        // The route eases its own animation (PlayerRoute).
                         curve: Curves.linear,
                         createRectTween: straightFlight,
                         flightShuttleBuilder: widget.flightShuttleBuilder,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 450),
-                          curve: Curves.easeOutCubic,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: scheme.shadow.withValues(
-                                  alpha: playing ? 0.3 : 0.15,
+                        child: ValueListenableBuilder(
+                          valueListenable: widget.away ?? _here,
+                          builder: (context, away, cover) =>
+                              Opacity(opacity: away ? 0 : 1, child: cover),
+                          child: AnimatedContainer(
+                            key: widget.coverKey,
+                            duration: const Duration(milliseconds: 450),
+                            curve: Curves.easeOutCubic,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: scheme.shadow.withValues(
+                                    alpha: playing ? 0.3 : 0.15,
+                                  ),
+                                  blurRadius: playing ? 36 : 12,
+                                  offset: Offset(0, playing ? 14 : 4),
                                 ),
-                                blurRadius: playing ? 36 : 12,
-                                offset: Offset(0, playing ? 14 : 4),
-                              ),
-                            ],
-                          ),
-                          child: BookCover(
-                            title: widget.entry.book.title,
-                            url: widget.entry.book.cover,
-                            size: widget.size,
-                            radius: 16,
+                              ],
+                            ),
+                            child: BookCover(
+                              title: widget.entry.book.title,
+                              url: widget.entry.book.cover,
+                              size: widget.size,
+                              radius: 16,
+                            ),
                           ),
                         ),
                       ),

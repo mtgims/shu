@@ -25,16 +25,21 @@ import 'driving_screen.dart';
 import 'marks.dart';
 import 'player_cover.dart';
 import 'player_extras.dart';
+import 'player_sheet.dart';
 
 export 'player_extras.dart' show PlayerExtras;
 
 /// The full player: cover, chapter, seek bar, transport, speed, sleep timer and bookmarks, in
 /// the colours of the book's cover.
 class NowPlayingScreen extends StatelessWidget {
-  const NowPlayingScreen({super.key});
+  const NowPlayingScreen({super.key, this.coverKey, this.coverAway});
 
-  /// [from]: the mini player's card the player grows out of.
-  static Route<void> route({BuildContext? from}) => PlayerRoute(from: from);
+  /// In a phone's player sheet: the cover's key, to find where it rests, and whether the sheet
+  /// draws the cover itself (on its way between the mini player and here).
+  final GlobalKey? coverKey;
+  final ValueListenable<bool>? coverAway;
+
+  static Route<void> route() => PlayerRoute();
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +70,7 @@ class NowPlayingScreen extends StatelessWidget {
         leading: IconButton(
           tooltip: 'Close',
           icon: Icon(isWide(context) ? Icons.close : Icons.keyboard_arrow_down),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => closePlayer(context),
         ),
         actions: [
           if (entry != null && _phone)
@@ -138,6 +143,8 @@ class NowPlayingScreen extends StatelessWidget {
             size: size,
             heroTag: playerCoverTag,
             flightShuttleBuilder: smallCoverInFlight,
+            coverKey: coverKey,
+            away: coverAway,
             // The status sits on the cover so it never pushes the controls down.
             overlay: _StatusBanner(player: player),
           );
@@ -710,14 +717,11 @@ class _OnNewBookState extends State<_OnNewBook> {
   Widget build(BuildContext context) => widget.builder(context, _entry);
 }
 
-/// Opens the player. On phones it grows out of the mini player and shrinks back into it, the
-/// cover moving with it, and a drag down takes it back the same way; in wide windows it rises a
-/// little and fades in where it will be.
+/// Opens the player as a page of its own: in wide windows (phones unfold it from the mini player,
+/// see PlayerSheet). It rises a little and fades in where it will be while the cover flies into
+/// place.
 class PlayerRoute extends PageRoute<void> {
-  /// [from] is the mini player's card; without one the page rises from the bottom edge.
-  PlayerRoute({this.from}) : super(fullscreenDialog: true);
-
-  final BuildContext? from;
+  PlayerRoute() : super(fullscreenDialog: true);
 
   /// While the route moves, the page is drawn once and that picture moves: redrawing the whole
   /// player (cover, blurred background) on every frame stutters on big screens.
@@ -730,7 +734,7 @@ class PlayerRoute extends PageRoute<void> {
   }
 
   void _snapshotWhileMoving(AnimationStatus status) {
-    _snapshot.allowSnapshotting = status.isAnimating && !_dragging;
+    _snapshot.allowSnapshotting = status.isAnimating;
     // Closing: the cover starts flying only after the first frame, so the picture taken then
     // still holds it and a second cover would leave with the page. Once the flight has
     // started (the post-frame callbacks have all run), the picture is taken again without it.
@@ -764,8 +768,7 @@ class PlayerRoute extends PageRoute<void> {
   Duration get reverseTransitionDuration => const Duration(milliseconds: 350);
 
   /// The controller itself eases, so the page and the cover's flight (which follows the route's
-  /// animation as is) move as one, and a finger can take over or let go anywhere. A curve laid
-  /// over the animation changes when the direction does: letting go of a drag made the page jump.
+  /// animation as is) move as one.
   static const _ease = Easing.emphasizedDecelerate;
 
   @override
@@ -785,19 +788,6 @@ class PlayerRoute extends PageRoute<void> {
     return popped;
   }
 
-  /// The mini player's card, in the navigator's coordinates, while it is on screen; otherwise a
-  /// line along the bottom edge.
-  Rect _origin(Size screen) {
-    final card = from != null && from!.mounted
-        ? from!.findRenderObject()
-        : null;
-    final ancestor = navigator?.context.findRenderObject();
-    if (card is RenderBox && card.attached && card.hasSize) {
-      return card.localToGlobal(Offset.zero, ancestor: ancestor) & card.size;
-    }
-    return Rect.fromLTWH(0, screen.height, screen.width, 0);
-  }
-
   @override
   Widget buildPage(
     BuildContext context,
@@ -811,99 +801,20 @@ class PlayerRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) {
-    final moving = SnapshotWidget(
-      controller: _snapshot,
-      mode: SnapshotMode.permissive,
-      child: child,
-    );
-    if (isWide(context)) {
-      // The player rises a little and fades in where it will be (and back out).
-      return FadeTransition(
-        opacity: animation,
-        child: SlideTransition(
-          position: Tween(
-            begin: const Offset(0, 0.04),
-            end: Offset.zero,
-          ).animate(animation),
-          child: moving,
-        ),
-      );
-    }
-    // The card grows into the page, its top edge leading and the content riding on it, as
-    // the cover flies on the same value; the page shows through only at the start, over the
-    // mini player.
-    final screen = MediaQuery.sizeOf(context);
-    final origin = _origin(screen);
-    final t = animation.value;
-    final rect = Rect.lerp(origin, Offset.zero & screen, t)!;
-    return GestureDetector(
-      onVerticalDragStart: (_) => _grab(),
-      onVerticalDragUpdate: (d) => _drag(origin.top, d.primaryDelta ?? 0),
-      onVerticalDragEnd: (d) => _release(d.primaryVelocity ?? 0),
-      onVerticalDragCancel: () => _release(0),
-      child: Opacity(
-        opacity: const Interval(0, 0.3).transform(t),
-        child: Transform.translate(
-          offset: Offset(0, rect.top),
-          child: ClipRRect(
-            clipper: _Outline(
-              RRect.fromRectAndRadius(
-                rect.translate(0, -rect.top),
-                Radius.circular(14 * (1 - t)),
-              ),
-            ),
-            child: moving,
-          ),
-        ),
+  ) => FadeTransition(
+    opacity: animation,
+    child: SlideTransition(
+      position: Tween(
+        begin: const Offset(0, 0.04),
+        end: Offset.zero,
+      ).animate(animation),
+      child: SnapshotWidget(
+        controller: _snapshot,
+        mode: SnapshotMode.permissive,
+        child: child,
       ),
-    );
-  }
-
-  /// Whether a drag is under way: a tap also ends in a "cancel", with nothing to undo.
-  bool _dragging = false;
-
-  void _grab() {
-    _dragging = true;
-    // The finger moves the page itself: it stays live.
-    _snapshot.allowSnapshotting = false;
-    navigator?.didStartUserGesture();
-  }
-
-  /// The page's top edge follows the finger down (and back up) over [travel], the way to the
-  /// mini player.
-  void _drag(double travel, double dy) {
-    if (!_dragging) return;
-    controller!.value -= dy / travel;
-  }
-
-  /// Closes after a flick or past a third of the way down, otherwise springs back.
-  void _release(double velocity) {
-    if (!_dragging) return;
-    _dragging = false;
-    if (velocity > 700 || controller!.value < 0.67) {
-      navigator?.pop();
-    } else {
-      controller!.animateTo(
-        1,
-        duration: transitionDuration * (1 - controller!.value),
-        curve: _ease,
-      );
-    }
-    navigator?.didStopUserGesture();
-  }
-}
-
-/// The player page's outline while it grows out of the mini player.
-class _Outline extends CustomClipper<RRect> {
-  _Outline(this.outline);
-  final RRect outline;
-
-  @override
-  RRect getClip(Size size) => outline;
-
-  @override
-  bool shouldReclip(_Outline old) => old.outline != outline;
+    ),
+  );
 }
 
 /// Once the book has ended: the next one of its series, to open (its page, where Play picks a
@@ -973,6 +884,7 @@ class _NextInSeries extends StatelessWidget {
 void openNextInSeries(InstalledAddon addon, BookSummary book) {
   final navigator = navigatorKey.currentState;
   if (navigator == null) return;
+  PlayerSheet.foldAll();
   navigator.popUntil((route) => route is! PlayerRoute);
   openBook(navigator.context, addon, book);
 }

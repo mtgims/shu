@@ -16,7 +16,7 @@ import '../widgets/cover.dart';
 import '../widgets/download_button.dart';
 import '../widgets/mini_player.dart';
 import 'local_book_menu.dart';
-import 'now_playing_screen.dart';
+import 'player_sheet.dart';
 import 'versions.dart';
 
 /// A book's page. Catalog books (no chapters) list the versions sources found and play the
@@ -44,6 +44,11 @@ class BookScreen extends StatefulWidget {
 }
 
 class _BookScreenState extends State<BookScreen> {
+  /// The player, folded into this page's mini player on a phone.
+  final _sheet = GlobalKey<PlayerSheetState>();
+
+  void _openPlayer() => openPlayer(context, _sheet.currentState);
+
   late Future<Book> _book = _load();
   Future<SourceList>? _sources;
   Future<List<Version>>? _versions;
@@ -100,9 +105,8 @@ class _BookScreenState extends State<BookScreen> {
 
   String get _workKey => LibraryEntry.keyOf(widget.addon.id, widget.summary.id);
 
-  Future<void> _play(Book book, {int? chapter}) async {
+  void _play(Book book, {int? chapter}) {
     final player = AppScope.of(context).player;
-    final navigator = Navigator.of(context);
     // The player opens at once and shows progress; getting the link can take seconds.
     unawaited(
       player.openBook(
@@ -113,21 +117,20 @@ class _BookScreenState extends State<BookScreen> {
         workKey: widget.workKey,
       ),
     );
-    await navigator.push(NowPlayingScreen.route());
+    _openPlayer();
   }
 
   /// Play on a catalog book: the version listened to before, or the best one found.
   Future<void> _playWork(Book work) async {
     final scope = AppScope.of(context);
-    final navigator = Navigator.of(context);
     final earlier = scope.library.findByWork(widget.addon.id, work.id);
     if (earlier != null && !earlier.finished) {
       unawaited(scope.player.resume(earlier));
-      await navigator.push(NowPlayingScreen.route());
+      _openPlayer();
       return;
     }
     final choice = await _chooseVersion(work);
-    if (choice == null) return;
+    if (choice == null || !mounted) return;
     unawaited(
       scope.player.openBook(
         choice.addon,
@@ -137,7 +140,7 @@ class _BookScreenState extends State<BookScreen> {
         alternatives: choice.alternatives,
       ),
     );
-    await navigator.push(NowPlayingScreen.route());
+    _openPlayer();
   }
 
   /// Download on a catalog book: the version listened to before, or the one Play would pick.
@@ -233,7 +236,10 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      PlayerSheet(key: _sheet, child: _page(context));
+
+  Widget _page(BuildContext context) {
     return Scaffold(
       // Playback stays at hand on pages opened over the main screen.
       bottomNavigationBar: const MiniPlayer(),
@@ -585,9 +591,7 @@ class _BookScreenState extends State<BookScreen> {
       style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
       onPressed: _starting
           ? null
-          : () => playing
-                ? Navigator.of(context).push(NowPlayingScreen.route())
-                : _playWork(work),
+          : () => playing ? _openPlayer() : _playWork(work),
       icon: _starting
           ? const SizedBox.square(
               dimension: 18,
@@ -609,9 +613,7 @@ class _BookScreenState extends State<BookScreen> {
         : 'Play';
     return FilledButton.icon(
       style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-      onPressed: () => isCurrent
-          ? Navigator.of(context).push(NowPlayingScreen.route())
-          : _play(book),
+      onPressed: () => isCurrent ? _openPlayer() : _play(book),
       icon: Icon(isCurrent ? Icons.graphic_eq : Icons.play_arrow_rounded),
       label: Text(label),
     );

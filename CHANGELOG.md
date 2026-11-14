@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2 - 2026-11-13
+
+### New
+- On a phone, pull the player bar up with your finger to open the player, and let go wherever you
+  like: it carries on from there
+
+### Changed
+- The player bar now unfolds into the player and folds back into it as one piece: its row fades
+  out as it grows, the player's controls come in after, and the navigation bar slides away
+  underneath. There's no second player bar showing through any more while it closes
+
 ## 0.7.1 - 2026-11-13
 
 ### Changed

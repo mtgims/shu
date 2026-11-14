@@ -10,6 +10,7 @@ import 'screens/addons_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/now_playing_screen.dart' show PlayerRoute, openNextInSeries;
+import 'screens/player_sheet.dart';
 import 'screens/search_screen.dart';
 import 'theme.dart';
 import 'updates/updater.dart';
@@ -432,28 +433,43 @@ class HomeShellState extends State<HomeShell> {
           const MiniPlayer(),
         ],
       );
-      // Android back: from another tab, go Home first instead of leaving the app.
-      return PopScope(
-        canPop: tab == 0,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) currentTab.value = 0;
-        },
-        child: Scaffold(
-          body: body,
-          bottomNavigationBar: isWide(context)
-              ? null
-              : NavigationBar(
-                  selectedIndex: tab,
-                  onDestinationSelected: (i) => currentTab.value = i,
-                  destinations: [
-                    for (final t in _tabs)
-                      NavigationDestination(
-                        icon: Icon(t.icon),
-                        selectedIcon: Icon(t.selectedIcon),
-                        label: t.label,
-                      ),
-                  ],
-                ),
+      // Android back: from another tab, go Home first instead of leaving the app. While the
+      // player is out, Back folds it (its sheet's local history entry) wherever the tab.
+      return ValueListenableBuilder(
+        valueListenable: playerExpansion,
+        builder: (context, out, page) => PopScope(
+          canPop: tab == 0 || out > 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && playerExpansion.value == 0) currentTab.value = 0;
+          },
+          child: page!,
+        ),
+        child: PlayerSheet(
+          child: Scaffold(
+            body: body,
+            bottomNavigationBar: isWide(context)
+                ? null
+                // Slides away while the player unfolds over it (and back as it folds).
+                : ValueListenableBuilder(
+                    valueListenable: playerExpansion,
+                    builder: (context, out, bar) => FractionalTranslation(
+                      translation: Offset(0, out),
+                      child: bar,
+                    ),
+                    child: NavigationBar(
+                      selectedIndex: tab,
+                      onDestinationSelected: (i) => currentTab.value = i,
+                      destinations: [
+                        for (final t in _tabs)
+                          NavigationDestination(
+                            icon: Icon(t.icon),
+                            selectedIcon: Icon(t.selectedIcon),
+                            label: t.label,
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
         ),
       );
     },
