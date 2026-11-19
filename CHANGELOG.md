@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3 - 2026-11-19
+
+### Fixed
+- On desktop the player and its chapter list sit in the middle of the window, with as much room
+  below as above, instead of low and off to one side
+- The desktop player bar has more room around it; its buttons were almost on the window's edge
+
 ## 0.7.2 - 2026-11-13
 
 ### New

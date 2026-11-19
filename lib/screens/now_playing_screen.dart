@@ -177,11 +177,23 @@ class NowPlayingScreen extends StatelessWidget {
               PlayerExtras(player: player),
             ],
           );
-          const padding = EdgeInsets.fromLTRB(24, kToolbarHeight, 24, 8);
+          // SafeArea already keeps clear of the app bar (the body extends behind it). Wide
+          // windows have no gesture bar below: as much room below as the app bar above, so the
+          // page sits in the middle of the window.
+          final wide = isWide(context);
+          final padding = EdgeInsets.fromLTRB(
+            24,
+            wide ? 0 : kToolbarHeight,
+            24,
+            wide ? kToolbarHeight : 8,
+          );
           Widget column(List<Widget> children) => Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(children: children),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: children,
+              ),
             ),
           );
           // Too short for a useful cover beside the controls (a phone on its side): scroll.
@@ -192,19 +204,22 @@ class NowPlayingScreen extends StatelessWidget {
             );
           }
           // The controls take what they need; the cover fills the rest, so the page fits the
-          // screen exactly and never scrolls (which also fought the drag that closes it).
+          // screen exactly and never scrolls (which also fought the drag that closes it). Wide
+          // windows keep the cover at its size and centre the whole column instead.
           return Padding(
             padding: padding,
             child: column([
-              Expanded(
+              Flexible(
+                fit: wide ? FlexFit.loose : FlexFit.tight,
                 child: LayoutBuilder(
-                  builder: (context, room) => Center(
-                    child: cover(
+                  builder: (context, room) {
+                    final art = cover(
                       math
                           .min(room.maxWidth, room.maxHeight)
                           .clamp(120.0, 380.0),
-                    ),
-                  ),
+                    );
+                    return wide ? art : Center(child: art);
+                  },
                 ),
               ),
               const SizedBox(height: 20),
@@ -216,32 +231,31 @@ class NowPlayingScreen extends StatelessWidget {
     );
     if (!sidePane) return main;
     // The player and its chapters as one group in the middle, the chapters on a card next to
-    // the controls rather than against the window's far edge.
+    // the controls rather than against the window's far edge. Both have fixed widths so the
+    // group as a whole is centred.
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1120),
-        child: Row(
-          children: [
-            Expanded(child: main),
-            SizedBox(
-              width: 400,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, kToolbarHeight, 24, 24),
-                  // A Material, so the rows' hover and click marks show on the card.
-                  child: Material(
-                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(16),
-                    clipBehavior: Clip.antiAlias,
-                    child: _AfterOpening(
-                      child: MarksPane(player: player, entry: entry),
-                    ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(width: 568, child: main),
+          SizedBox(
+            width: 400,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 24, kToolbarHeight),
+                // A Material, so the rows' hover and click marks show on the card.
+                child: Material(
+                  color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: _AfterOpening(
+                    child: MarksPane(player: player, entry: entry),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
