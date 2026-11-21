@@ -1,7 +1,10 @@
+import 'dart:math' show min;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../addons/addon_store.dart';
+import '../app.dart' show PageBesideRail;
 import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../library/library_store.dart';
@@ -9,10 +12,11 @@ import '../screens/book_screen.dart';
 import '../theme.dart';
 import 'adaptive.dart';
 import 'cover.dart';
+import 'title_parts.dart';
 
 void openBook(BuildContext context, InstalledAddon addon, BookSummary summary) {
   Navigator.of(context).push(
-    MaterialPageRoute<void>(
+    PageBesideRail<void>(
       builder: (_) => BookScreen(addon: addon, summary: summary),
     ),
   );
@@ -21,7 +25,7 @@ void openBook(BuildContext context, InstalledAddon addon, BookSummary summary) {
 /// Opens a library book, keeping the look of the catalog book it was started from.
 void openEntry(BuildContext context, InstalledAddon addon, LibraryEntry entry) {
   Navigator.of(context).push(
-    MaterialPageRoute<void>(
+    PageBesideRail<void>(
       builder: (_) => BookScreen(
         addon: addon,
         summary: entry.book,
@@ -120,6 +124,7 @@ class BookCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final (:title, :labels) = splitTitle(this.title);
     return SizedBox(
       width: width,
       child: InkWell(
@@ -131,7 +136,22 @@ class BookCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              BookCover(title: title, url: cover),
+              Stack(
+                children: [
+                  BookCover(title: title, url: cover),
+                  if (labels.isNotEmpty)
+                    Positioned(
+                      left: 6,
+                      right: 6,
+                      bottom: 6,
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [for (final l in labels) TitleLabel(l)],
+                      ),
+                    ),
+                ],
+              ),
               if (progress != null) ...[
                 const SizedBox(height: 6),
                 LinearProgressIndicator(
@@ -175,11 +195,13 @@ class CardRow extends StatelessWidget {
     required this.title,
     required this.children,
     this.trailing,
+    this.height = 230,
   });
 
   final String title;
   final List<Widget> children;
   final Widget? trailing;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -187,7 +209,7 @@ class CardRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 8, 8),
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 2),
           child: Row(
             children: [
               Expanded(
@@ -196,11 +218,21 @@ class CardRow extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              ?trailing,
+              // A compact "See all": a full-height button doubles the gap above the row.
+              if (trailing case final trailing?)
+                TextButtonTheme(
+                  data: TextButtonThemeData(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  child: trailing,
+                ),
             ],
           ),
         ),
-        CardStrip(children: children),
+        CardStrip(height: height, children: children),
       ],
     );
   }
@@ -213,10 +245,14 @@ class CardStrip extends StatefulWidget {
     super.key,
     required this.children,
     this.padding = const EdgeInsets.symmetric(horizontal: 12),
+    this.height = 230,
   });
 
   final List<Widget> children;
   final EdgeInsets padding;
+
+  /// Room for the cards: 230 fits a cover with two lines of title and one of byline.
+  final double height;
 
   @override
   State<CardStrip> createState() => _CardStripState();
@@ -260,7 +296,7 @@ class _CardStripState extends State<CardStrip> {
   @override
   Widget build(BuildContext context) {
     final list = SizedBox(
-      height: 230,
+      height: widget.height,
       child: ListView.separated(
         controller: _scroll,
         scrollDirection: Axis.horizontal,
@@ -271,6 +307,8 @@ class _CardStripState extends State<CardStrip> {
       ),
     );
     if (!isWide(context)) return list;
+    // Over the covers' middle, or the middle of a lower strip.
+    final arrowTop = min(48.0, (widget.height - 48) / 2);
     Widget arrow(int direction) => IconButton.filledTonal(
       tooltip: direction < 0 ? 'Back' : 'More',
       onPressed: () => _page(direction),
@@ -286,9 +324,10 @@ class _CardStripState extends State<CardStrip> {
           child: Stack(
             children: [
               list,
-              // Over the covers, at their middle.
-              if (_canBack) Positioned(left: 4, top: 48, child: arrow(-1)),
-              if (_canForward) Positioned(right: 4, top: 48, child: arrow(1)),
+              if (_canBack)
+                Positioned(left: 4, top: arrowTop, child: arrow(-1)),
+              if (_canForward)
+                Positioned(right: 4, top: arrowTop, child: arrow(1)),
             ],
           ),
         ),
@@ -297,12 +336,21 @@ class _CardStripState extends State<CardStrip> {
   }
 }
 
-/// "4 h 12 min left" for a book under way at [speed], or null when the length isn't known (or
-/// the book isn't started or is finished: those say so in words).
+/// "4 h 12 min left" for a book under way at [speed]. Without every chapter's length it is
+/// estimated from the book's length and how far along it is ("About 6 h left"). Null when
+/// neither is known, or the book isn't started or is finished (those say so in words).
 String? timeLeftText(LibraryEntry entry, double speed) {
   if (entry.finished || !entry.started) return null;
   final left = entry.timeLeftAt(entry.position);
-  return left == null ? null : '${formatLength(left * (1 / speed))} left';
+  if (left != null) return '${formatLength(left * (1 / speed))} left';
+  final minutes = entry.book.durationMinutes ?? 0;
+  if (minutes <= 0) return null;
+  final estimate = Duration(minutes: minutes) * ((1 - entry.progress) / speed);
+  // Chapters are uneven: minutes would claim a precision the estimate doesn't have.
+  final rounded = estimate.inMinutes >= 90
+      ? Duration(hours: (estimate.inMinutes / 60).round())
+      : estimate;
+  return 'About ${formatLength(rounded)} left';
 }
 
 /// A length in words: "4 h 12 min", "38 min", "1 min" (never "0 min").
@@ -318,4 +366,25 @@ String formatDuration(Duration d) {
   final m = d.inMinutes.remainder(60).toString().padLeft(h > 0 ? 2 : 1, '0');
   final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
   return h > 0 ? '$h:$m:$s' : '$m:$s';
+}
+
+/// An edition note taken out of a title ("Part 1 of 2", "Full cast"), as a small tag on a cover.
+class TitleLabel extends StatelessWidget {
+  const TitleLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Text(text, style: theme.textTheme.labelSmall),
+      ),
+    );
+  }
 }

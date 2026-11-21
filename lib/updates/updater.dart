@@ -9,18 +9,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../addons/addon_store.dart' show compareVersions;
 import '../version.dart';
+import 'desktop_install.dart';
 
-/// A newer release on GitHub. [apk] is the download for this phone; desktop builds get the
-/// release page instead.
+/// A newer release on GitHub. [file] is the download Shu can install itself; without one the
+/// release page opens instead.
 class AppUpdate {
-  const AppUpdate({required this.version, required this.page, this.apk});
+  const AppUpdate({required this.version, required this.page, this.file});
 
   final String version;
   final Uri page;
-  final Uri? apk;
+  final Uri? file;
 }
 
-/// Looks for a newer release on GitHub at most once a day, and on Android installs it.
+/// Looks for a newer release on GitHub at most once a day, and installs it.
 class Updater {
   Updater(this._prefs, {http.Client? client}) : _http = client ?? http.Client();
 
@@ -62,16 +63,37 @@ class Updater {
     return parseRelease(
       jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>,
       skipped: force ? null : _prefs.getString(_skippedKey),
+      asset: _asset(),
     );
   }
 
-  /// The update in GitHub's release JSON, when it is newer than this build and not [skipped].
+  /// The release file this build installs, or null when it can't replace itself.
+  static String? _asset() {
+    if (Platform.isAndroid) return assetFor(abi: Abi.current());
+    final image = DesktopInstall.appImage;
+    final dir = image != null ? File(image).parent : DesktopInstall.bundle;
+    if (!DesktopInstall.writable(dir)) return null;
+    return assetFor(abi: Abi.current(), appImage: image != null);
+  }
+
+  /// The name of the release file for [abi]; the names are fixed by the release workflow.
+  static String? assetFor({required Abi abi, bool appImage = false}) =>
+      switch (abi) {
+        Abi.androidArm64 => 'shu-android-arm64-v8a.apk',
+        Abi.androidArm => 'shu-android-armeabi-v7a.apk',
+        Abi.linuxX64 when appImage => 'shu-linux-x86_64.AppImage',
+        Abi.linuxX64 => 'shu-linux-x64.tar.gz',
+        Abi.windowsX64 => 'shu-windows-x64.zip',
+        _ => null,
+      };
+
+  /// The update in GitHub's release JSON, when it is newer than this build and not [skipped];
+  /// [asset] names the file to install.
   static AppUpdate? parseRelease(
     Map<String, dynamic> release, {
     String? skipped,
     String current = appVersion,
-    bool android = false,
-    Abi? abi,
+    String? asset,
   }) {
     final version = (release['tag_name'] as String? ?? '').replaceFirst(
       RegExp('^v'),
@@ -89,21 +111,14 @@ class Updater {
             a['browser_download_url'] is String)
           a['name'] as String: a['browser_download_url'] as String,
     };
-    final apkName = switch (abi ?? Abi.current()) {
-      Abi.androidArm64 => 'shu-android-arm64-v8a.apk',
-      Abi.androidArm => 'shu-android-armeabi-v7a.apk',
-      _ => null,
-    };
-    final apk = (android || Platform.isAndroid) && apkName != null
-        ? assets[apkName]
-        : null;
+    final file = assets[asset];
     return AppUpdate(
       version: version,
       page: Uri.parse(
         release['html_url'] as String? ??
             'https://github.com/$repo/releases/latest',
       ),
-      apk: apk == null ? null : Uri.parse(apk),
+      file: file == null ? null : Uri.parse(file),
     );
   }
 
@@ -111,21 +126,52 @@ class Updater {
   Future<void> skip(AppUpdate update) =>
       _prefs.setString(_skippedKey, update.version);
 
-  /// Downloads the APK into the app's cache and opens the system installer. Answers
-  /// "permission" when Android first needs the user to allow installs from Shu.
+  /// Android: downloads the APK and opens the system installer; answers "permission" when
+  /// Android first needs the user to allow installs from Shu. Desktop: downloads the release and
+  /// puts it in place of this one; answers "restart". [onProgress] gets null while installing.
   Future<String> install(
     AppUpdate update, {
-    void Function(double progress)? onProgress,
+    void Function(double? progress)? onProgress,
   }) async {
+    final url = update.file!;
+    if (!Platform.isAndroid) {
+      final file = DesktopInstall.downloadFile(url.pathSegments.last);
+      // Only the update being installed is kept (beside an AppImage, just its download).
+      if (DesktopInstall.appImage == null && await file.parent.exists()) {
+        await file.parent.delete(recursive: true);
+      }
+      await file.parent.create(recursive: true);
+      await _download(url, file, onProgress);
+      onProgress?.call(null);
+      await DesktopInstall.apply(file);
+      return 'restart';
+    }
     final dir = Directory(
       '${(await getApplicationCacheDirectory()).path}/updates',
     );
-    // Only the update being installed is kept.
     if (await dir.exists()) await dir.delete(recursive: true);
     await dir.create(recursive: true);
     final file = File('${dir.path}/shu-${update.version}.apk');
+    await _download(url, file, onProgress);
+    return await const MethodChannel('io.player.shu/update')
+            .invokeMethod<String>('install', file.path) ??
+        'started';
+  }
+
+  /// Desktop: what an earlier update left behind goes at the next start.
+  static Future<void> tidy() async {
+    if (enabled && (Platform.isLinux || Platform.isWindows)) {
+      await DesktopInstall.tidy();
+    }
+  }
+
+  Future<void> _download(
+    Uri url,
+    File file,
+    void Function(double? progress)? onProgress,
+  ) async {
     final res = await _http
-        .send(http.Request('GET', update.apk!))
+        .send(http.Request('GET', url))
         .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
       throw HttpException('The download failed (HTTP ${res.statusCode}).');
@@ -144,13 +190,10 @@ class Updater {
       }
     } on Object {
       await sink.close().catchError((Object _) {});
-      // Half an APK is no use, and the next try starts over.
+      // Half a download is no use, and the next try starts over.
       await file.delete().catchError((Object _) => file);
       rethrow;
     }
     await sink.close();
-    return await const MethodChannel('io.player.shu/update')
-            .invokeMethod<String>('install', file.path) ??
-        'started';
   }
 }

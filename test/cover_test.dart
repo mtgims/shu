@@ -26,8 +26,13 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('covers'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  /// Shows the cover and gives it real time to read and decode the file.
-  Future<void> show(WidgetTester tester, String url) async {
+  /// Shows the cover and gives it real time to read and decode the file: until the picture
+  /// shows, up to [wait] (decoding takes longer while the other test files run alongside).
+  Future<void> show(
+    WidgetTester tester,
+    String url, {
+    Duration wait = const Duration(seconds: 5),
+  }) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         MaterialApp(
@@ -36,7 +41,8 @@ void main() {
           ),
         ),
       );
-      for (var i = 0; i < 40; i++) {
+      final end = DateTime.now().add(wait);
+      while (DateTime.now().isBefore(end)) {
         await Future<void>.delayed(const Duration(milliseconds: 25));
         await tester.pump();
         if (find.byType(RawImage).evaluate().isNotEmpty) break;
@@ -58,7 +64,12 @@ void main() {
   testWidgets('a cover that cannot be read gets the generated one', (
     tester,
   ) async {
-    await show(tester, Uri.file('${dir.path}/missing.png').toString());
+    // Nothing is expected to show: a short wait, not the full one.
+    await show(
+      tester,
+      Uri.file('${dir.path}/missing.png').toString(),
+      wait: const Duration(seconds: 1),
+    );
     expect(find.byType(RawImage), findsNothing);
     expect(find.text('A Book'), findsOneWidget);
   });

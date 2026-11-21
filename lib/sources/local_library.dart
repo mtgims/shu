@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../addons/backend.dart';
 import '../addons/models.dart';
+import '../storage/atomic_file.dart';
 import 'local_scan.dart';
 
 /// An audiobook on this device: its files, in order, and what to call it.
@@ -300,9 +301,10 @@ class LocalLibrary extends ChangeNotifier {
 
   Future<void> _save() async {
     await _dir.create(recursive: true);
-    final tmp = File('${_index.path}.tmp');
-    await tmp.writeAsString(jsonEncode([for (final b in _books) b.toJson()]));
-    await tmp.rename(_index.path);
+    await writeAtomically(
+      _index,
+      jsonEncode([for (final b in _books) b.toJson()]),
+    );
     revision++;
     notifyListeners();
   }

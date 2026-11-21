@@ -224,7 +224,7 @@ class _BookScreenState extends State<BookScreen> {
 
   void _openVersion(Book work, Version v) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      PageBesideRail<void>(
         builder: (_) => BookScreen(
           addon: v.addon,
           summary: v.release,

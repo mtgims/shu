@@ -5,18 +5,50 @@ import 'package:flutter/material.dart';
 /// Warm amber on deep plum: the same palette as the addon's settings page.
 const amber = Color(0xFFE8B04A);
 
-/// The app's theme, or with [seed] one in the colours of a book cover (the player).
-ThemeData buildTheme(Brightness brightness, {Color? seed}) {
+/// The accent colours to choose from (Appearance); the first is the default.
+const accents = [
+  (name: 'Amber', color: amber),
+  (name: 'Teal', color: Color(0xFF3FB8A8)),
+  (name: 'Rose', color: Color(0xFFE5738F)),
+  (name: 'Indigo', color: Color(0xFF8C8CF0)),
+  (name: 'Green', color: Color(0xFF7CBF5A)),
+  (name: 'Blue', color: Color(0xFF5AA7E8)),
+];
+
+final _appThemes = <(Brightness, int, bool), ThemeData>{};
+
+/// The app's theme in the user's accent ([accents] index), built once per choice.
+ThemeData appTheme(
+  Brightness brightness,
+  int accent, {
+  bool pureBlack = false,
+}) {
+  final i = accent.clamp(0, accents.length - 1);
+  return _appThemes[(brightness, i, pureBlack)] ??= buildTheme(
+    brightness,
+    accent: accents[i].color,
+    pureBlack: pureBlack,
+  );
+}
+
+/// The app's theme in [accent], or with [seed] one in the colours of a book cover (the player).
+/// [pureBlack]: dark surfaces become black (OLED screens), keeping a trace of their tint.
+ThemeData buildTheme(
+  Brightness brightness, {
+  Color? seed,
+  Color accent = amber,
+  bool pureBlack = false,
+}) {
   final dark = brightness == Brightness.dark;
   var scheme = ColorScheme.fromSeed(
-    seedColor: seed ?? amber,
+    seedColor: seed ?? accent,
     brightness: brightness,
     // Keeps a cover's own hue in the buttons instead of a pale tint of it.
     dynamicSchemeVariant: seed == null
         ? DynamicSchemeVariant.tonalSpot
         : DynamicSchemeVariant.fidelity,
   );
-  if (dark && seed == null) {
+  if (dark && seed == null && accent == amber) {
     scheme = scheme.copyWith(
       primary: amber,
       onPrimary: const Color(0xFF1A1408),
@@ -29,6 +61,26 @@ ThemeData buildTheme(Brightness brightness, {Color? seed}) {
       onSurface: const Color(0xFFF1ECE3),
       onSurfaceVariant: const Color(0xFFA59BB6),
       outlineVariant: const Color(0xFF2F2940),
+    );
+  } else if (dark && seed == null) {
+    // The accent itself, as bright as amber is, instead of a pale tint of it.
+    scheme = scheme.copyWith(
+      primary: accent,
+      onPrimary: ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+          ? Colors.white
+          : const Color(0xFF10141A),
+    );
+  }
+  if (dark && pureBlack && seed == null) {
+    Color darker(Color c) => Color.lerp(c, Colors.black, 0.6)!;
+    scheme = scheme.copyWith(
+      surface: Colors.black,
+      surfaceContainerLowest: Colors.black,
+      surfaceContainerLow: darker(scheme.surfaceContainerLow),
+      surfaceContainer: darker(scheme.surfaceContainer),
+      surfaceContainerHigh: darker(scheme.surfaceContainerHigh),
+      surfaceContainerHighest: darker(scheme.surfaceContainerHighest),
+      outlineVariant: darker(scheme.outlineVariant),
     );
   }
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
@@ -76,6 +128,8 @@ ThemeData buildTheme(Brightness brightness, {Color? seed}) {
       ),
     ),
     // On a computer a notice across the whole window looks broken; it gets a toast's width.
+    // A snack bar with an action stays until dismissed unless it says `persist: false`
+    // (Flutter's default); Shu's actions are all shortcuts, so every one passes it.
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       width: _desktop ? 480 : null,

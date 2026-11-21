@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../player/audiobook_player.dart';
@@ -9,7 +10,7 @@ import 'keyboard_scroll.dart';
 /// Keys and mouse buttons that work on every page, as in desktop players: Space plays or pauses,
 /// ← and → skip back 15 s and forward 30 s, ↑ ↓ Page Up/Down Home End scroll ([KeyboardScroll]),
 /// Esc, Alt+← and the mouse's back button go back,
-/// Ctrl+F searches, Ctrl+1 to Ctrl+4 open the tabs, and the keyboard's media keys play, pause and
+/// Ctrl+F searches, Ctrl+1 to Ctrl+5 open the tabs, and the keyboard's media keys play, pause and
 /// skip chapters.
 ///
 /// Space and the arrows act only when nothing in particular has the focus: in a text field they
@@ -28,7 +29,7 @@ class DesktopInput extends StatefulWidget {
   final GlobalKey<NavigatorState> navigator;
   final VoidCallback onSearch;
 
-  /// Ctrl+1 to Ctrl+4: the main screen's tabs.
+  /// Ctrl+1 to Ctrl+5: the main screen's tabs.
   final void Function(int index) onTab;
   final Widget child;
 
@@ -58,17 +59,21 @@ class _DesktopInputState extends State<DesktopInput> {
       f.unfocus();
       return;
     }
-    widget.navigator.currentState?.maybePop();
+    _pop();
   }
+
+  /// Back acts on what is on screen: a page opened in this very frame (a click and Esc at
+  /// once, or a slow first build) isn't built yet, and popping it then trips the navigator.
+  void _pop() => SchedulerBinding.instance.endOfFrame.then((_) {
+    widget.navigator.currentState?.maybePop();
+  });
 
   @override
   Widget build(BuildContext context) {
     final player = widget.player;
     return Listener(
       onPointerDown: (e) {
-        if (e.buttons & kBackMouseButton != 0) {
-          widget.navigator.currentState?.maybePop();
-        }
+        if (e.buttons & kBackMouseButton != 0) _pop();
       },
       child: Shortcuts(
         shortcuts: const {
@@ -82,6 +87,7 @@ class _DesktopInputState extends State<DesktopInput> {
           SingleActivator(LogicalKeyboardKey.digit2, control: true): _Tab(1),
           SingleActivator(LogicalKeyboardKey.digit3, control: true): _Tab(2),
           SingleActivator(LogicalKeyboardKey.digit4, control: true): _Tab(3),
+          SingleActivator(LogicalKeyboardKey.digit5, control: true): _Tab(4),
           // Media keys work everywhere: no text field uses them.
           SingleActivator(LogicalKeyboardKey.mediaPlayPause): _Media(
             _Key.toggle,

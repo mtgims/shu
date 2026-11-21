@@ -26,7 +26,7 @@ server, and can be extended with small JavaScript extensions.
 - Your own audiobooks: MP3, M4B, M4A, FLAC, Ogg and more, with chapters read from M4B files
 - Audiobookshelf and Jellyfin servers: browse, search and stream your libraries, with your
   progress kept in step with the server
-- Browse and search across all of them at once
+- Browse and search across all of them at once; search starts as you type
 - A library that remembers where you stopped in every book, as a list or a grid of covers
 - Downloads for listening offline; on Android they go on with the screen off and wait for Wi-Fi
   unless you allow mobile data
@@ -40,7 +40,12 @@ server, and can be extended with small JavaScript extensions.
 - Background playback with controls on the lock screen, in quick settings and in Android Auto;
   media keys and desktop media widgets (MPRIS) on Linux
 - Keyboard use on Linux and Windows: Space plays and pauses, ← and → skip, ↑ ↓ and Page Up/Down
-  scroll, Ctrl+F searches and Ctrl+1 to Ctrl+4 open the tabs
+  scroll, Ctrl+F searches and Ctrl+1 to Ctrl+5 open the tabs
+- A mini player on Linux and Windows: the window shrinks to a small card that stays on top of
+  other windows. On Wayland apps can't keep themselves on top, so ask your window manager: the
+  window is titled "Shu mini player" while it's small
+- Light and dark themes, six accent colours and a pure black mode for OLED screens, under
+  **Settings → Appearance**
 
 macOS and iOS builds are set up but haven't been tested yet.
 
@@ -58,8 +63,9 @@ The buttons above get the latest version; older ones are on the
 - **Windows**: unpack `shu-windows-x64.zip` and run `Shu\shu.exe`.
 
 Shu checks for a new version once a day. On Android it downloads and installs it for you (the
-first time, Android asks you to allow installs from Shu); on Linux and Windows it opens the
-download page. You can also check under **Addons → ⋮ → Check for updates**.
+first time, Android asks you to allow installs from Shu); on Linux and Windows it downloads the
+new version, swaps it in and restarts. If Shu can't write to the folder it runs from, it opens
+the download page instead. You can also check under **Settings → Check for updates**.
 
 If playback stops at the end of a chapter while the screen is off, your phone's battery saver is
 probably cutting Shu off (common on Xiaomi, Samsung and Huawei phones). Set Shu's battery usage
@@ -96,8 +102,9 @@ and copy the address. It looks like
 `https://raw.githubusercontent.com/<user>/<repo>/main/index.json`.
 
 If an extension has settings, they open right after installing it. Settings stay on your device.
-Installed extensions update themselves; the app checks once a day. An update that comes with a
-new warning waits for you: **Review update** on the Addons page shows it before installing.
+The app looks for extension updates once a day but installs nothing by itself: a dot on the
+Addons tab says when one is ready, and **Update** on the extension (or **Update all**) installs
+it. An update that comes with a new warning shows it first.
 
 There are two kinds of extensions:
 

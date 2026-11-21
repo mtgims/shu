@@ -16,7 +16,7 @@ class ExtensionSettingsScreen extends StatefulWidget {
   final InstalledAddon addon;
 
   static Route<void> route(InstalledAddon addon) =>
-      MaterialPageRoute(builder: (_) => ExtensionSettingsScreen(addon: addon));
+      PageBesideRail(builder: (_) => ExtensionSettingsScreen(addon: addon));
 
   @override
   State<ExtensionSettingsScreen> createState() =>

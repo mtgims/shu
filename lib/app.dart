@@ -1,3 +1,4 @@
+import 'dart:math' show max;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
@@ -12,11 +13,14 @@ import 'screens/library_screen.dart';
 import 'screens/now_playing_screen.dart' show PlayerRoute, openNextInSeries;
 import 'screens/player_sheet.dart';
 import 'screens/search_screen.dart';
+import 'screens/settings_screen.dart';
 import 'theme.dart';
 import 'updates/updater.dart';
 import 'widgets/adaptive.dart';
 import 'widgets/desktop_input.dart';
 import 'widgets/mini_player.dart';
+import 'widgets/mini_window.dart';
+import 'widgets/sidebar.dart';
 
 /// Gives every screen access to the app's long-lived objects.
 class AppScope extends InheritedWidget {
@@ -52,20 +56,43 @@ final homeShellKey = GlobalKey<HomeShellState>();
 /// than on the main screen, changes it too.
 final currentTab = ValueNotifier<int>(0);
 
-const _tabs = [
-  (label: 'Home', icon: Icons.home_outlined, selectedIcon: Icons.home),
-  (label: 'Search', icon: Icons.search, selectedIcon: Icons.search),
+/// [updates]: the tab carries a dot while extension updates wait ([UpdatesBadge]).
+const List<SidebarTab> _tabs = [
+  (
+    label: 'Home',
+    icon: Icons.home_outlined,
+    selectedIcon: Icons.home,
+    updates: false,
+  ),
+  (
+    label: 'Search',
+    icon: Icons.search,
+    selectedIcon: Icons.search,
+    updates: false,
+  ),
   (
     label: 'Library',
     icon: Icons.headphones_outlined,
     selectedIcon: Icons.headphones,
+    updates: false,
   ),
   (
     label: 'Addons',
     icon: Icons.extension_outlined,
     selectedIcon: Icons.extension,
+    updates: true,
+  ),
+  (
+    label: 'Settings',
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings,
+    updates: false,
   ),
 ];
+
+/// The phone's bottom bar: the tabs in this order, Search in the middle under the thumb. The
+/// desktop sidebar keeps [_tabs]' order (and Ctrl+1–5 with it).
+const _barOrder = [0, 2, 1, 3, 4];
 
 /// Back to the main screen, on tab [index]. Not while a dialog is open: it may be busy, and
 /// closing it under its feet would make it close the page beneath when it ends.
@@ -82,26 +109,27 @@ final _player = _PlayerObserver();
 
 /// Whether the full player is open, so the side rail beside the pages can make way for it.
 class _PlayerObserver extends NavigatorObserver {
-  final open = ValueNotifier<bool>(false);
-  var _count = 0;
+  /// How far the full player is open, while it is on screen (opening, open or closing).
+  final opening = ValueNotifier<Animation<double>?>(null);
 
-  void _changed(Route<dynamic> route, int by) {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is! PlayerRoute) return;
-    _count += by;
-    open.value = _count > 0;
+    final animation = route.animation!;
+    opening.value = animation;
+    animation.addStatusListener((status) {
+      if (status.isDismissed && opening.value == animation) {
+        opening.value = null;
+      }
+    });
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _changed(route, 1);
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _changed(route, -1);
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _changed(route, -1);
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PlayerRoute && opening.value == route.animation) {
+      opening.value = null;
+    }
+  }
 }
 
 /// Follows the dialogs and menus over the pages, so the side rail beside them can dim and stop
@@ -159,45 +187,77 @@ class AudiobooksApp extends StatelessWidget {
       player: player,
       downloads: downloads,
       updater: updater,
-      child: MaterialApp(
-        title: 'Shu',
-        scaffoldMessengerKey: messengerKey,
-        navigatorKey: navigatorKey,
-        navigatorObservers: [_dialogs, _player],
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
-        home: HomeShell(key: homeShellKey),
-        builder: (context, child) => DesktopInput(
-          player: player,
-          navigator: navigatorKey,
-          onSearch: () {
-            if (goToTab(1)) homeShellKey.currentState?.focusSearch();
-          },
-          onTab: goToTab,
-          // Wide windows keep the rail beside every page, not only the main screen. The key
-          // keeps the pages when the window crosses the width.
-          child: Row(
-            children: [
-              if (isWide(context))
-                // The full player has the whole window: the rail slides away while it shows.
-                ValueListenableBuilder(
-                  valueListenable: _player.open,
-                  builder: (context, open, rail) => ClipRect(
-                    child: AnimatedAlign(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: open ? 0 : 1,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      child: rail,
+      // Rebuilt when a setting changes, for the chosen theme (rare, and its themes are cached).
+      child: ListenableBuilder(
+        listenable: player.settings,
+        builder: (context, _) => MaterialApp(
+          title: 'Shu',
+          scaffoldMessengerKey: messengerKey,
+          navigatorKey: navigatorKey,
+          navigatorObservers: [_dialogs, _player],
+          debugShowCheckedModeBanner: false,
+          theme: appTheme(Brightness.light, player.settings.accent),
+          darkTheme: appTheme(
+            Brightness.dark,
+            player.settings.accent,
+            pureBlack: player.settings.pureBlack,
+          ),
+          themeMode: player.settings.themeMode,
+          home: RailInset(child: HomeShell(key: homeShellKey)),
+          // The pages and rail read the full window size even while the mini window shows.
+          builder: (context, child) => MiniWindowFrame(
+            child: Builder(
+              builder: (context) => DesktopInput(
+                player: player,
+                navigator: navigatorKey,
+                onSearch: () {
+                  if (goToTab(1)) homeShellKey.currentState?.focusSearch();
+                },
+                onTab: goToTab,
+                // Wide windows keep the rail beside every page, not only the main screen. The pages
+                // span the whole window and leave the rail's width free ([RailInset]), so the
+                // full player can take the whole window without anything changing size: the rail fades
+                // out over it as it opens. (Shrinking the pages' area stretched the cover in flight.)
+                child: Stack(
+                  children: [
+                    // Pages leave the rail's width empty: while the rail fades for the full player,
+                    // this shows there instead of the window behind the app.
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Theme.of(context).colorScheme.surface,
+                      ),
                     ),
-                  ),
-                  child: const Row(
-                    children: [_SideRail(), VerticalDivider(width: 1)],
-                  ),
+                    Positioned.fill(child: child!),
+                    if (isWide(context))
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: ValueListenableBuilder(
+                          valueListenable: _player.opening,
+                          builder: (context, opening, rail) => opening == null
+                              ? rail!
+                              : IgnorePointer(
+                                  child: FadeTransition(
+                                    // Gone by halfway, so it never shows through the player.
+                                    opacity: ReverseAnimation(
+                                      CurvedAnimation(
+                                        parent: opening,
+                                        curve: const Interval(0, 0.5),
+                                      ),
+                                    ),
+                                    child: rail,
+                                  ),
+                                ),
+                          child: const Row(
+                            children: [_SideRail(), VerticalDivider(width: 1)],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              Expanded(key: const ValueKey('pages'), child: child!),
-            ],
+              ),
+            ),
           ),
         ),
       ),
@@ -244,7 +304,7 @@ class _SideRailState extends State<_SideRail> {
         listenable: settings,
         builder: (context, _) => AnimatedContainer(
           duration: kThemeAnimationDuration,
-          width: _extended(context) ? 200 : 80,
+          width: railWidthOf(context) - 1,
           child: Overlay(initialEntries: [_entry]),
         ),
       ),
@@ -259,74 +319,61 @@ bool _roomyForRail(BuildContext context) =>
 bool _extended(BuildContext context) =>
     _roomyForRail(context) && AppScope.of(context).player.settings.railExtended;
 
+/// The room the side rail takes at the left of the window, its divider included: none when
+/// the window is too narrow for one.
+double railWidthOf(BuildContext context) =>
+    isWide(context) ? (_extended(context) ? 240 : 80) + 1 : 0;
+
+/// Room for the side rail at the left of a page: the rail is drawn over the pages, not beside
+/// them, so the full player can take the whole window with nothing changing size. It sits inside
+/// the page, where hero flights measure from (around it, in the transition, they landed off by
+/// the rail's width).
+class RailInset extends StatelessWidget {
+  const RailInset({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    // Follows the rail as it widens or narrows, in step with it.
+    listenable: AppScope.of(context).player.settings,
+    builder: (context, page) => AnimatedPadding(
+      duration: kThemeAnimationDuration,
+      padding: EdgeInsets.only(left: railWidthOf(context)),
+      child: page,
+    ),
+    child: child,
+  );
+}
+
+/// A page beside the side rail: every page opens as one, except the full player.
+class PageBesideRail<T> extends MaterialPageRoute<T> {
+  PageBesideRail({
+    required super.builder,
+    super.settings,
+    super.fullscreenDialog,
+  });
+
+  @override
+  Widget buildContent(BuildContext context) =>
+      RailInset(child: super.buildContent(context));
+}
+
 class _RailBody extends StatelessWidget {
   const _RailBody();
 
   @override
   Widget build(BuildContext context) {
     final settings = AppScope.of(context).player.settings;
-    final theme = Theme.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([currentTab, settings]),
+      listenable: settings,
       builder: (context, _) {
         final extended = _extended(context);
-        return ColoredBox(
-          color:
-              theme.navigationRailTheme.backgroundColor ??
-              theme.colorScheme.surface,
-          child: Column(
-            children: [
-              Expanded(
-                child: NavigationRail(
-                  selectedIndex: currentTab.value,
-                  onDestinationSelected: goToTab,
-                  extended: extended,
-                  minExtendedWidth: 200,
-                  labelType: NavigationRailLabelType.none,
-                  leading: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      // The app's icon is this character.
-                      extended ? '书  Shu' : '书',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  destinations: [
-                    for (final t in _tabs)
-                      NavigationRailDestination(
-                        // Icons only: the name shows on hover.
-                        icon: Tooltip(
-                          message: extended ? '' : t.label,
-                          child: Icon(t.icon),
-                        ),
-                        selectedIcon: Tooltip(
-                          message: extended ? '' : t.label,
-                          child: Icon(t.selectedIcon),
-                        ),
-                        label: Text(t.label),
-                      ),
-                  ],
-                ),
-              ),
-              if (_roomyForRail(context))
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Align(
-                    alignment: extended
-                        ? Alignment.centerLeft
-                        : Alignment.center,
-                    child: IconButton(
-                      tooltip: extended ? 'Collapse' : 'Expand',
-                      icon: Icon(extended ? Icons.menu_open : Icons.menu),
-                      onPressed: () => settings.railExtended = !extended,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+        return Sidebar(
+          tabs: _tabs,
+          extended: extended,
+          onToggle: _roomyForRail(context)
+              ? () => settings.railExtended = !extended
+              : null,
         );
       },
     );
@@ -366,6 +413,9 @@ class HomeShellState extends State<HomeShell> {
     },
   );
 
+  /// How far a page pushed over the main screen covers it (follows a back gesture too).
+  Animation<double>? get _covered => ModalRoute.of(context)?.secondaryAnimation;
+
   @override
   void initState() {
     super.initState();
@@ -386,6 +436,7 @@ class HomeShellState extends State<HomeShell> {
       messengerKey.currentState?.showSnackBar(
         SnackBar(
           content: Text('Next in the series: ${n.book.title}'),
+          persist: false,
           action: SnackBarAction(
             label: 'Open',
             onPressed: () => openNextInSeries(n.addon, n.book),
@@ -411,6 +462,7 @@ class HomeShellState extends State<HomeShell> {
     SearchScreen(focus: _searchFocus),
     const LibraryScreen(),
     const AddonsScreen(),
+    const SettingsScreen(),
   ];
 
   @override
@@ -449,21 +501,30 @@ class HomeShellState extends State<HomeShell> {
             body: body,
             bottomNavigationBar: isWide(context)
                 ? null
-                // Slides away while the player unfolds over it (and back as it folds).
-                : ValueListenableBuilder(
-                    valueListenable: playerExpansion,
-                    builder: (context, out, bar) => FractionalTranslation(
-                      translation: Offset(0, out),
+                // Slides away while the player unfolds over it, or a page covers this one
+                // (the mini player glides down to that page's edge), and back.
+                : ListenableBuilder(
+                    listenable: Listenable.merge([playerExpansion, _covered]),
+                    builder: (context, bar) => FractionalTranslation(
+                      translation: Offset(
+                        0,
+                        max(playerExpansion.value, _covered?.value ?? 0),
+                      ),
                       child: bar,
                     ),
                     child: NavigationBar(
-                      selectedIndex: tab,
-                      onDestinationSelected: (i) => currentTab.value = i,
+                      selectedIndex: _barOrder.indexOf(tab),
+                      onDestinationSelected: (i) =>
+                          currentTab.value = _barOrder[i],
                       destinations: [
-                        for (final t in _tabs)
+                        for (final t in _barOrder.map((i) => _tabs[i]))
                           NavigationDestination(
-                            icon: Icon(t.icon),
-                            selectedIcon: Icon(t.selectedIcon),
+                            icon: t.updates
+                                ? UpdatesBadge(child: Icon(t.icon))
+                                : Icon(t.icon),
+                            selectedIcon: t.updates
+                                ? UpdatesBadge(child: Icon(t.selectedIcon))
+                                : Icon(t.selectedIcon),
                             label: t.label,
                           ),
                       ],

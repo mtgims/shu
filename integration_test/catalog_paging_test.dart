@@ -56,15 +56,20 @@ void main() {
       CatalogScreen.route(addon, addon.manifest.catalogs.single),
     );
 
-    // No scrolling at all: every page has to come by itself.
+    // No scrolling at all: every page has to come by itself. Only this page's cards count:
+    // while it opens, the main screen's catalog row is still drawn under it.
+    final cards = find.descendant(
+      of: find.byType(CatalogScreen),
+      matching: find.byType(BookCard),
+    );
     for (var i = 0; i < 50; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)),
       );
       await tester.pump();
-      if (find.byType(BookCard).evaluate().length == 20) break;
+      if (cards.evaluate().length == 20) break;
     }
-    expect(find.byType(BookCard), findsNWidgets(20));
+    expect(cards, findsNWidgets(20));
     expect(find.text('Book 19'), findsWidgets);
   });
 }

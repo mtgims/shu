@@ -54,9 +54,8 @@ folder the user picks on this device and the app can write to; empty means the d
 `host.torrent` saves only in a folder the user picked in one of these.
 
 A `notice` is shown before installing, with **I understand** and **Cancel**, and again at the
-top of the settings. Once accepted, updates install quietly while the text stays the same; an
-update that changes it waits: the Addons page offers **Review update**, which shows the new text
-and installs only once the user accepts it.
+top of the settings. Updates install when the user presses **Update** on the Addons page; one
+that changes the text shows the new text first and installs only once the user accepts it.
 
 Every catalog without `search` is a row on Home, with **See all** opening it as a grid that
 pages with `skip` while `hasMore` is true. A catalog with `genres` shows as a row of genre

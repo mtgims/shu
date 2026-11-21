@@ -11,6 +11,7 @@ import 'add_books.dart';
 import 'addons_screen.dart';
 import 'catalog_screen.dart';
 import 'continue_card.dart';
+import 'up_next_row.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -62,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
               names[c.name]! > 1 ? '${c.name} · ${a.manifest.name}' : c.name;
           final rows = <Widget Function()>[
             () => const _ContinueListening(),
+            () => const UpNextRow(),
             for (final addon in ordered)
               for (final catalog in addon.manifest.catalogs.where(
                 (c) => !c.search,
@@ -141,27 +143,10 @@ class _ContinueListening extends StatelessWidget {
     List<LibraryEntry> entries, {
     required String title,
   }) {
-    final scope = AppScope.of(context);
-    final speed = scope.player.settings.speed;
     return CardRow(
       title: title,
-      children: [
-        for (final entry in entries)
-          BookCard(
-            title: entry.book.title,
-            subtitle:
-                timeLeftText(entry, speed) ??
-                (entry.book.chapters.length > 1
-                    ? 'Chapter ${entry.chapterIndex + 1} of ${entry.book.chapters.length}'
-                    : entry.book.byline),
-            cover: entry.book.cover,
-            progress: entry.progress,
-            onTap: () {
-              final addon = scope.addons.byId(entry.addonId);
-              if (addon != null) openEntry(context, addon, entry);
-            },
-          ),
-      ],
+      height: ProgressCard.height,
+      children: [for (final entry in entries) ProgressCard(entry: entry)],
     );
   }
 }
@@ -179,7 +164,7 @@ class _GenreRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
           child: Text(
             catalog.name,
             style: Theme.of(context).textTheme.titleMedium,

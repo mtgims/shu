@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ChangeNotifier, ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// How the player behaves, chosen by the user and kept in shared preferences.
@@ -56,6 +56,32 @@ class PlayerSettings extends ChangeNotifier {
   /// Wide windows: the library as a grid of covers instead of a list.
   bool get libraryGrid => _prefs.getBool('libraryGrid') ?? false;
   set libraryGrid(bool on) => _setBool('libraryGrid', on);
+
+  /// Light, dark, or as the system is set.
+  ThemeMode get themeMode =>
+      ThemeMode.values.asNameMap()[_prefs.getString('themeMode')] ??
+      ThemeMode.system;
+  set themeMode(ThemeMode mode) {
+    _prefs.setString('themeMode', mode.name);
+    notifyListeners();
+  }
+
+  /// The accent colour: an index into the theme's accents.
+  int get accent => _prefs.getInt('accent') ?? 0;
+  set accent(int index) {
+    _prefs.setInt('accent', index);
+    notifyListeners();
+  }
+
+  /// Black instead of dark grey surfaces in the dark theme (OLED screens draw black for free).
+  bool get pureBlack => _prefs.getBool('pureBlack') ?? false;
+  set pureBlack(bool on) => _setBool('pureBlack', on);
+
+  /// The mini player (and the desktop player bar) in the colours of the book's cover, or in the
+  /// accent colour.
+  bool get miniPlayerCoverColors =>
+      _prefs.getBool('miniPlayerCoverColors') ?? true;
+  set miniPlayerCoverColors(bool on) => _setBool('miniPlayerCoverColors', on);
 
   double get speed => _prefs.getDouble('speed') ?? 1.0;
 

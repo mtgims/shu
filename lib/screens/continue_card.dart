@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../widgets/book_tiles.dart';
 import '../widgets/cover.dart';
 import '../widgets/cover_colors.dart';
+import '../widgets/title_parts.dart';
 import 'library_screen.dart' show entryMenu;
 
 /// The book listened to last, large at the top of Home in its cover's colours (the player's
@@ -85,7 +86,7 @@ class ContinueCard extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    entry.book.title,
+                                    splitTitle(entry.book.title).title,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: bookTitle(
@@ -194,6 +195,119 @@ class _PlayButton extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// A book in progress in the Continue listening row: wider than the store's cards, in its
+/// cover's colours, with the time left and how far along, so the row reads as the user's own.
+class ProgressCard extends StatelessWidget {
+  const ProgressCard({super.key, required this.entry});
+  final LibraryEntry entry;
+
+  static const width = 272.0;
+
+  /// The cover (76) and the padding around it.
+  static const height = 104.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
+    final book = entry.book;
+    final (:title, :labels) = splitTitle(book.title);
+    final status = [
+      ...labels,
+      timeLeftText(entry, scope.player.settings.speed) ??
+          (book.chapters.length > 1
+              ? 'Chapter ${entry.chapterIndex + 1} of ${book.chapters.length}'
+              : book.byline),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    return CoverTheme(
+      url: book.cover,
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          final colors = theme.colorScheme;
+          return MenuAnchor(
+            menuChildren: entryMenu(context, entry),
+            builder: (context, menu, child) => GestureDetector(
+              onSecondaryTapUp: (d) => menu.open(position: d.localPosition),
+              onLongPressStart: (d) => menu.open(position: d.localPosition),
+              child: child,
+            ),
+            child: SizedBox(
+              width: width,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Material(
+                  color: Color.alphaBlend(
+                    colors.primaryContainer.withValues(alpha: 0.35),
+                    colors.surfaceContainerHigh,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () {
+                      final addon = scope.addons.byId(entry.addonId);
+                      if (addon != null) openEntry(context, addon, entry);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Row(
+                        children: [
+                          BookCover(
+                            title: book.title,
+                            url: book.cover,
+                            size: 76,
+                            radius: 10,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: bookTitle(
+                                    theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  status,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                LinearProgressIndicator(
+                                  value: entry.progress,
+                                  minHeight: 4,
+                                  borderRadius: BorderRadius.circular(2),
+                                  color: colors.primary,
+                                  backgroundColor: colors.primary.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

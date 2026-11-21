@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.8.0 - 2026-11-21
+
+### New
+- Home has an "Up next in your series" row: when you finish a book you started from the catalog,
+  the next one in its series shows up there until you start it
+- Mini player on desktop: the button at the right of the player bar shrinks Shu to a small card
+  with the cover and controls that stays above your other windows, like a video's
+  picture-in-picture. Drag it anywhere; the arrows in its corner bring the full window back
+- A Settings tab, next to Addons, for everything that isn't an addon: appearance, playback and
+  download settings, checking for updates and About Shu. Addons now only lists your addons
+- Appearance, in Settings: light, dark or follow the system, six accent colours, and a pure
+  black option for phones with OLED screens. The mini player can keep the accent colour instead
+  of taking the colours of the book's cover
+
+### Changed
+- Search starts by itself once you stop typing for a moment, no need to press Enter. Clearing the
+  field (or the new × button) brings back the empty search instead of the last results
+- On phones, Search is in the middle of the bottom bar
+- Extension updates no longer install by themselves. Shu still looks for them once a day (now
+  also when you come back to it after a while), and a dot on the Addons tab tells you when one is
+  ready. Press Update on the extension, or Update all
+- On Linux and Windows, Update now downloads the new version, puts it in place of the old one and
+  restarts Shu. No more trips to the release page or deleting the old folder by hand. If Shu
+  can't write to its own folder, it opens the release page as before
+- Books in progress on Home are wider cards in their cover's colours with the time left and a
+  progress bar, so they no longer look like the store rows under them
+- Time left shows for books whose chapter lengths aren't known too, estimated from the book's
+  length ("About 6 h left")
+- Titles on cards leave out notes like "(Part 1 of 2)" and "(Dramatized Adaptation)"; they show as
+  small "Part 1 of 2" and "Full cast" tags on the cover instead. "(Unabridged)" is dropped
+- Less empty space between the rows on Home, so more of them fit on the screen
+- The desktop player bar is laid out in three parts: the book on the left, the controls in the
+  middle with the seek bar under them (always centred, whatever the window's width), and speed,
+  sleep timer and bookmark on the right as small buttons. It takes the colours of the book's
+  cover and floats as a rounded card above the bottom of the window, like the phone's player bar
+- On desktop, the side navigation is a proper sidebar: larger rows with the whole row lit up for
+  the page you're on, and under them your books in progress with their covers and time left.
+  Click one to carry on with it (or, for the one playing, to open the player). Folded, it shows
+  icons and covers only
+
+### Fixed
+- On Linux and Windows, closing Shu by force (or a crash) could wipe the whole library, progress
+  and extensions. Settings were saved by emptying the file and writing it again, and a kill in
+  between left it empty. Now the new copy is written beside the old one and swapped in at once.
+  The same goes for extension files and the list of books from this device
+- On a phone, going back from a book page (most of all with the back swipe) showed two mini
+  players, one of them without its cover, moving with each page. Now there is one: it glides down
+  as a book page opens and back onto the navigation bar on the way back, following your finger
+- On desktop, when a stream stopped sending partway (a hiccup at the server or on the
+  connection), Shu sat silent for minutes and then skipped to the next chapter, leaving the rest
+  of the one it was playing unheard. Now it notices sooner, opens a fresh link and carries on from
+  where it stopped
+- On desktop, jumping far into a book or opening one where you left off hours in could leave Shu
+  silent for minutes: for most MP3 audiobooks it downloaded everything up to that point first.
+  It now goes straight there
+- Shu's log no longer shows the links it streams from; they can hold a login token
+- Messages at the bottom of the screen with a button (Undo, Open, Review, Add note) stayed until
+  you closed them; they go away on their own again
+- On desktop, the cover flying between the player bar and the player was stretched wide on the
+  way and jumped to its size on landing, opening and closing. The side rail used to slide away
+  while it flew, resizing everything under it; now the player opens over the rail, which fades
+  out with nothing changing size, and the cover flies straight to its place
+
 ## 0.7.3 - 2026-11-19
 
 ### Fixed

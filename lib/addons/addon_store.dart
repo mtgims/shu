@@ -13,6 +13,7 @@ import '../extensions/extension_backend.dart';
 import '../extensions/host.dart';
 import '../sources/local_library.dart';
 import '../sources/server.dart';
+import '../storage/atomic_file.dart';
 import 'backend.dart';
 import 'client.dart';
 import 'models.dart';
@@ -316,7 +317,7 @@ class AddonStore extends ChangeNotifier {
     final manifest = Manifest.fromExtensionJson(json);
     if (!await _noticeAccepted(manifest, accept)) throw InstallCancelled();
     await _dir.create(recursive: true);
-    await _codeFile(manifest.id).writeAsString(code);
+    await writeAtomically(_codeFile(manifest.id), code);
     final source = updateSource(updateUrl, json['updateUrl']);
     final addon = _extension(manifest, code, source);
     final etagKey = 'ext.etag.${manifest.id}';
@@ -329,6 +330,7 @@ class AddonStore extends ChangeNotifier {
       'ext.checked.${manifest.id}',
       DateTime.now().toIso8601String(),
     );
+    await _prefs.remove('ext.update.${manifest.id}');
     await _put(addon);
     return addon;
   }
@@ -478,6 +480,7 @@ class AddonStore extends ChangeNotifier {
         'ext.etag.',
         'ext.checked.',
         'ext.notice.',
+        'ext.update.',
       ]) {
         await _prefs.remove('$key${addon.id}');
       }
@@ -559,31 +562,37 @@ class AddonStore extends ChangeNotifier {
     }
   }
 
-  /// Versions of extensions waiting for the user to accept a changed notice, by id. Found again
-  /// by the next check, so not saved.
-  final _waiting = <String, String>{};
+  /// The newer version of [addon] found by [checkUpdates], waiting for the user to install it.
+  /// Kept in the settings, so it still shows after a restart (checks run once a day).
+  String? availableUpdate(InstalledAddon addon) {
+    final version = _prefs.getString('ext.update.${addon.id}');
+    return version != null &&
+            compareVersions(version, addon.manifest.version) > 0
+        ? version
+        : null;
+  }
 
-  /// The version of [addon] that waits for the user's OK, if any.
-  String? waitingUpdate(InstalledAddon addon) => _waiting[addon.id];
+  /// Extensions with an update waiting ([availableUpdate]).
+  List<InstalledAddon> get updates => [
+    for (final a in _addons)
+      if (availableUpdate(a) != null) a,
+  ];
 
-  /// Installs the waiting update of [addon] once [accept] says yes to its notice.
-  Future<void> reviewUpdate(
+  /// Installs the newer version of [addon]; [accept] is asked when its notice changed.
+  Future<void> update(
     InstalledAddon addon,
     Future<bool> Function(Manifest manifest) accept,
   ) async {
     await install(addon.updateUrl!, accept: accept);
-    if (_waiting.remove(addon.id) != null) notifyListeners();
   }
 
-  /// Updates extensions whose last check is older than a day. A check without changes costs one
-  /// small request (the server answers 304 to the stored ETag). An update whose notice changed
-  /// waits for the user instead ([waitingUpdate]). Returns the updated names and those waiting.
-  Future<({List<String> updated, List<InstalledAddon> waiting})> checkUpdates({
-    bool force = false,
-  }) async {
+  /// Looks for newer versions of extensions not checked for a day. A check without changes
+  /// costs one small request (the server answers 304 to the stored ETag). Nothing is installed:
+  /// newer versions wait for the user ([availableUpdate]). Returns the extensions with a newer
+  /// version found by this check.
+  Future<List<InstalledAddon>> checkUpdates({bool force = false}) async {
     await _refreshServers(force: force);
-    final updated = <String>[];
-    final waiting = <InstalledAddon>[];
+    final found = <InstalledAddon>[];
     for (final addon in [
       ..._addons.where(
         (a) =>
@@ -598,7 +607,8 @@ class AddonStore extends ChangeNotifier {
         continue;
       }
       try {
-        final (code, etag) = await _download(
+        // The ETag stays the installed copy's: a newer version found now is found again.
+        final (code, _) = await _download(
           Uri.parse(addon.updateUrl!),
           etag: _prefs.getString('ext.etag.${addon.id}'),
         );
@@ -608,22 +618,18 @@ class AddonStore extends ChangeNotifier {
           ExtensionEngine.readManifest(code),
         );
         if (manifest.id != addon.id ||
-            compareVersions(manifest.version, addon.manifest.version) <= 0) {
+            compareVersions(manifest.version, addon.manifest.version) <= 0 ||
+            manifest.version == availableUpdate(addon)) {
           continue;
         }
-        if (!_noticeKnown(manifest)) {
-          _waiting[addon.id] = manifest.version;
-          waiting.add(addon);
-          notifyListeners();
-          continue;
-        }
-        await installExtension(code, updateUrl: addon.updateUrl, etag: etag);
-        updated.add('${manifest.name} ${manifest.version}');
+        await _prefs.setString('ext.update.${addon.id}', manifest.version);
+        found.add(addon);
+        notifyListeners();
       } on Object catch (e) {
         debugPrint('Update check for ${addon.id} failed: $e');
       }
     }
-    return (updated: updated, waiting: waiting);
+    return found;
   }
 }
 

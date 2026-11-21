@@ -1,3 +1,5 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
 
 import '../app.dart';
@@ -30,7 +32,15 @@ class MiniPlayer extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: _Unfolds(
-              child: MiniCard(player: player, entry: entry),
+              // Every page with a mini player has its own; the Hero makes them one card that
+              // glides between pages (finger-tracked on a back gesture) instead of two moving
+              // with their pages.
+              child: Hero(
+                tag: miniPlayerTag,
+                transitionOnUserGestures: true,
+                createRectTween: straightFlight,
+                child: MiniCard(player: player, entry: entry),
+              ),
             ),
           ),
         );
@@ -38,6 +48,9 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 }
+
+/// The phone mini player shared by every page (see [MiniPlayer]).
+const miniPlayerTag = 'mini-player';
 
 /// The phone's mini player card, floating above the navigation in the colours of the book's
 /// cover, the progress along its bottom edge. It is also the player folded up: the player's
@@ -64,7 +77,7 @@ class MiniCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CoverTheme(
+    return MiniPlayerTheme(
       url: entry.book.cover,
       child: Builder(
         builder: (context) {
@@ -106,16 +119,11 @@ class MiniCard extends StatelessWidget {
                                   SizedBox.fromSize(size: coverRect.size)
                                 else
                                   _CoverSpot(
-                                    child: Hero(
-                                      tag: playerCoverTag,
-                                      transitionOnUserGestures: true,
-                                      createRectTween: straightFlight,
-                                      child: BookCover(
-                                        title: entry.book.title,
-                                        url: entry.book.cover,
-                                        size: coverRect.width,
-                                        radius: 8,
-                                      ),
+                                    child: BookCover(
+                                      title: entry.book.title,
+                                      url: entry.book.cover,
+                                      size: coverRect.width,
+                                      radius: 8,
                                     ),
                                   ),
                                 const SizedBox(width: 12),
@@ -132,7 +140,7 @@ class MiniCard extends StatelessWidget {
                                           theme.textTheme.titleSmall,
                                         ),
                                       ),
-                                      _StatusLine(player: player, entry: entry),
+                                      StatusLine(player: player, entry: entry),
                                     ],
                                   ),
                                 ),
@@ -160,7 +168,7 @@ class MiniCard extends StatelessWidget {
                               ],
                             ),
                           ),
-                          _ProgressLine(player: player),
+                          ProgressLine(player: player),
                         ],
                       ),
                     ),
@@ -247,8 +255,9 @@ class _CoverSpotState extends State<_CoverSpot> {
   Widget build(BuildContext context) => widget.child;
 }
 
-class _ProgressLine extends StatelessWidget {
-  const _ProgressLine({required this.player});
+/// How far into the chapter, as a thin line along a card's bottom edge.
+class ProgressLine extends StatelessWidget {
+  const ProgressLine({super.key, required this.player});
   final AudiobookPlayer player;
 
   @override
@@ -273,8 +282,8 @@ class _ProgressLine extends StatelessWidget {
 }
 
 /// The chapter, or what keeps it from playing.
-class _StatusLine extends StatelessWidget {
-  const _StatusLine({required this.player, required this.entry});
+class StatusLine extends StatelessWidget {
+  const StatusLine({super.key, required this.player, required this.entry});
   final AudiobookPlayer player;
   final LibraryEntry entry;
 
@@ -309,85 +318,129 @@ class _PlayerBar extends StatelessWidget {
   final AudiobookPlayer player;
   final LibraryEntry entry;
 
+  /// The middle (controls over the seek bar) is at most this wide, and stays centred.
+  static const _middle = 560.0;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final roomy = MediaQuery.sizeOf(context).width >= 1100;
-    return Material(
-      color: theme.colorScheme.surfaceContainerHigh,
-      // As tall as its contents, also in a page's bottom bar slot (which offers the whole
-      // height): the column lets the row measure its children without that height.
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Tooltip(
-                    message: 'Open the player',
-                    waitDuration: const Duration(milliseconds: 600),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => openPlayer(context),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Row(
-                          children: [
-                            Hero(
-                              tag: playerCoverTag,
-                              transitionOnUserGestures: true,
-                              createRectTween: straightFlight,
-                              child: BookCover(
-                                title: entry.book.title,
-                                url: entry.book.cover,
-                                size: 44,
-                                radius: 6,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    entry.book.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: bookTitle(
-                                      theme.textTheme.titleSmall,
-                                    ),
+    // In the book's colours, like the phone's card.
+    return MiniPlayerTheme(
+      url: entry.book.cover,
+      child: Builder(
+        builder: (context) {
+          final colors = Theme.of(context).colorScheme;
+          // A card floating above the page's bottom edge, as on phones.
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Material(
+              color: Color.alphaBlend(
+                colors.primaryContainer.withValues(alpha: 0.45),
+                colors.surfaceContainerHigh,
+              ),
+              elevation: 3,
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
+              // As tall as its contents, also in a page's bottom bar slot (which offers the
+              // whole height): the column lets the row measure its children without it.
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                    child: LayoutBuilder(
+                      builder: (context, box) => Row(
+                        children: [
+                          // Equal sides keep the middle centred whatever the book's title.
+                          Expanded(child: _book(context)),
+                          SizedBox(
+                            width: min(_middle, box.maxWidth * 0.46),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PlayerTransport(
+                                  player: player,
+                                  entry: entry,
+                                  compact: true,
+                                ),
+                                // Repaints often; keep it from repainting the rest of the bar.
+                                RepaintBoundary(
+                                  child: PlayerSeekBar(
+                                    player: player,
+                                    compact: true,
                                   ),
-                                  _StatusLine(player: player, entry: entry),
-                                ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: PlayerExtras(
+                                player: player,
+                                compact: true,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                PlayerTransport(player: player, entry: entry, compact: true),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 5,
-                  // Repaints often; keep it from repainting the rest of the bar.
-                  child: RepaintBoundary(
-                    child: PlayerSeekBar(player: player, compact: true),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// The cover and title; a click opens the player.
+  Widget _book(BuildContext context) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: 'Open the player',
+        waitDuration: const Duration(milliseconds: 600),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => openPlayer(context),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Hero(
+                  tag: playerCoverTag,
+                  transitionOnUserGestures: true,
+                  createRectTween: straightFlight,
+                  child: BookCover(
+                    title: entry.book.title,
+                    url: entry.book.cover,
+                    size: 56,
+                    radius: 8,
                   ),
                 ),
-                if (roomy) ...[
-                  const SizedBox(width: 8),
-                  PlayerExtras(player: player),
-                ],
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        entry.book.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: bookTitle(theme.textTheme.titleSmall),
+                      ),
+                      StatusLine(player: player, entry: entry),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -437,6 +490,28 @@ class _SwipeAwayState extends State<_SwipeAway> {
         widget.onGone();
       },
       child: widget.child,
+    );
+  }
+}
+
+/// [CoverTheme] for the mini players: the cover's colours, or the app's accent when the user
+/// turned that off ([PlayerSettings.miniPlayerCoverColors]).
+class MiniPlayerTheme extends StatelessWidget {
+  const MiniPlayerTheme({super.key, required this.url, required this.child});
+
+  final String? url;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = AppScope.of(context).player.settings;
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, child) => CoverTheme(
+        url: settings.miniPlayerCoverColors ? url : null,
+        child: child!,
+      ),
+      child: child,
     );
   }
 }

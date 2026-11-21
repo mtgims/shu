@@ -3,12 +3,17 @@ import 'package:flutter/material.dart';
 import '../player/audiobook_player.dart';
 import '../player/player_settings.dart';
 import '../widgets/adaptive.dart';
+import '../widgets/mini_window.dart';
 import 'marks.dart';
 
-/// Speed, sleep timer and bookmark, under the player and in the wide player bar.
+/// Speed, sleep timer and bookmark (and the mini player in the bar), under the player and in the wide player bar.
 class PlayerExtras extends StatelessWidget {
-  const PlayerExtras({super.key, required this.player});
+  const PlayerExtras({super.key, required this.player, this.compact = false});
   final AudiobookPlayer player;
+
+  /// The player bar's form: the speed without its icon, the sleep timer an icon that says more
+  /// only while it runs.
+  final bool compact;
 
   static const presets = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
   static const minSpeed = 0.5;
@@ -28,30 +33,45 @@ class PlayerExtras extends StatelessWidget {
         StreamBuilder<double>(
           stream: player.speedStream,
           initialData: player.speed,
-          builder: (context, snap) => TextButton.icon(
-            onPressed: () => _pickSpeed(context),
-            icon: const Icon(Icons.speed),
-            label: Text(speedLabel(snap.data ?? 1)),
-          ),
+          builder: (context, snap) => compact
+              ? TextButton(
+                  onPressed: () => _pickSpeed(context),
+                  child: Text(
+                    speedLabel(snap.data ?? 1),
+                    semanticsLabel: 'Speed ${speedLabel(snap.data ?? 1)}',
+                  ),
+                )
+              : TextButton.icon(
+                  onPressed: () => _pickSpeed(context),
+                  icon: const Icon(Icons.speed),
+                  label: Text(speedLabel(snap.data ?? 1)),
+                ),
         ),
         ValueListenableBuilder<SleepTimer?>(
           valueListenable: player.sleepTimer,
           builder: (context, timer, _) => Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextButton.icon(
-                onPressed: () => _pickSleep(context),
-                icon: Icon(
-                  timer == null ? Icons.bedtime_outlined : Icons.bedtime,
+              if (compact && timer == null)
+                IconButton(
+                  tooltip: 'Sleep timer',
+                  onPressed: () => _pickSleep(context),
+                  icon: const Icon(Icons.bedtime_outlined),
+                )
+              else
+                TextButton.icon(
+                  onPressed: () => _pickSleep(context),
+                  icon: Icon(
+                    timer == null ? Icons.bedtime_outlined : Icons.bedtime,
+                  ),
+                  label: Text(
+                    timer == null
+                        ? 'Sleep timer'
+                        : timer.endOfChapter
+                        ? 'End of chapter'
+                        : 'Until ${TimeOfDay.fromDateTime(timer.endsAt!).format(context)}',
+                  ),
                 ),
-                label: Text(
-                  timer == null
-                      ? 'Sleep timer'
-                      : timer.endOfChapter
-                      ? 'End of chapter'
-                      : 'Until ${TimeOfDay.fromDateTime(timer.endsAt!).format(context)}',
-                ),
-              ),
               if (timer?.endsAt != null)
                 IconButton(
                   tooltip: 'Add 5 minutes',
@@ -66,6 +86,12 @@ class PlayerExtras extends StatelessWidget {
           onPressed: () => _bookmark(context),
           icon: const Icon(Icons.bookmark_add_outlined),
         ),
+        if (compact && MiniWindow.available)
+          const IconButton(
+            tooltip: 'Mini player',
+            onPressed: MiniWindow.enter,
+            icon: Icon(Icons.picture_in_picture_alt_outlined),
+          ),
       ],
     );
   }
@@ -78,6 +104,7 @@ class PlayerExtras extends StatelessWidget {
     messenger.showSnackBar(
       SnackBar(
         content: Text('Bookmarked at ${markTime(entry, mark)}'),
+        persist: false,
         action: SnackBarAction(
           label: 'Add note',
           onPressed: () => editBookmarkNote(context, player, mark),

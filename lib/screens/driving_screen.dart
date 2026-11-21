@@ -16,7 +16,7 @@ import '../widgets/cover_colors.dart';
 class DrivingScreen extends StatefulWidget {
   const DrivingScreen({super.key});
 
-  static Route<void> route() => MaterialPageRoute<void>(
+  static Route<void> route() => PageBesideRail<void>(
     fullscreenDialog: true,
     builder: (_) => const DrivingScreen(),
   );

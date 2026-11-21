@@ -14,10 +14,12 @@ import 'library/library_store.dart';
 import 'peer/torrent_engine.dart';
 import 'player/audiobook_player.dart';
 import 'player/player_settings.dart';
+import 'storage/desktop_prefs.dart';
 import 'updates/update_banner.dart';
 import 'updates/updater.dart';
 import 'widgets/cover_colors.dart';
 import 'widgets/cover_image.dart';
+import 'widgets/mini_window.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +28,9 @@ Future<void> main() async {
     debugPrint('Unexpected error: ${withoutLinks(error)}\n$stack');
     return true;
   };
+  // Here, not in createApp: tests build the app with in-memory settings and must keep them.
+  DesktopPrefs.use();
+  await MiniWindow.setUp();
   final app = await createApp();
   runApp(app);
   // Off the startup path: cover cache upkeep, and extension updates (at most one small request
@@ -37,43 +42,42 @@ Future<void> main() async {
       debugPrint('Cover cache upkeep failed: ${withoutLinks(e)}');
     }
   });
-  Future.delayed(const Duration(seconds: 15), () async {
-    try {
-      final (:updated, :waiting) = await app.addons.checkUpdates();
-      final messenger = messengerKey.currentState;
-      if (updated.isNotEmpty) {
-        messenger?.showSnackBar(
-          SnackBar(content: Text('Updated ${updated.join(', ')}')),
-        );
-      }
-      if (waiting.isNotEmpty) {
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text(
-              waiting.length == 1
-                  ? 'An update of ${waiting.single.manifest.name} needs your OK'
-                  : 'Updates of ${waiting.map((a) => a.manifest.name).join(', ')} need your OK',
-            ),
-            action: SnackBarAction(
-              label: 'Review',
-              onPressed: () => goToTab(3),
-            ),
-          ),
-        );
-      }
-    } on Object catch (e) {
-      debugPrint('Extension update check failed: ${withoutLinks(e)}');
-    }
-  });
+  Future.delayed(const Duration(seconds: 15), () => _checkExtensions(app));
+  // Also when coming back to Shu, which can stay open for days on a phone (still at most once a
+  // day per extension).
+  AppLifecycleListener(onResume: () => _checkExtensions(app));
   // A newer Shu on the releases page: at most one small request a day.
   Future.delayed(const Duration(seconds: 20), () async {
     try {
+      await Updater.tidy();
       final update = await app.updater.check();
       if (update != null) offerUpdate(app.updater, update);
     } on Object catch (e) {
       debugPrint('Update check failed: ${withoutLinks(e)}');
     }
   });
+}
+
+/// Looks for extension updates (at most one small request per extension a day) and says when
+/// some are ready to install on the Addons tab.
+Future<void> _checkExtensions(AudiobooksApp app) async {
+  try {
+    final found = await app.addons.checkUpdates();
+    if (found.isEmpty) return;
+    messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(
+          found.length == 1
+              ? 'An update of ${found.single.manifest.name} is ready'
+              : 'Updates of ${found.map((a) => a.manifest.name).join(', ')} are ready',
+        ),
+        persist: false,
+        action: SnackBarAction(label: 'Review', onPressed: () => goToTab(3)),
+      ),
+    );
+  } on Object catch (e) {
+    debugPrint('Extension update check failed: ${withoutLinks(e)}');
+  }
 }
 
 /// Sets up storage and the player. `systemControls: false` skips audio_service (background
@@ -117,6 +121,7 @@ Future<AudiobooksApp> createApp({bool systemControls = true}) async {
       messengerKey.currentState?.showSnackBar(
         SnackBar(
           content: Text('Carrying on from where you got to on $from'),
+          persist: false,
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () => player.jumpTo(before),

@@ -11,6 +11,7 @@ import 'package:audiobooks/main.dart';
 import 'package:audiobooks/player/audiobook_player.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,12 +25,16 @@ Future<HttpServer> fakeAddon({
   double seconds = 2,
   String? cover,
   bool chapterLengths = false,
+  bool stallFirst = false,
 }) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final base = 'http://127.0.0.1:${server.port}';
   final audio = toneWav(seconds: seconds);
   // The second chapter fails once, like a connection still waking up with the screen off.
   var secondRefused = false;
+  // [stallFirst]: the first chapter's first request stops halfway and goes quiet, the
+  // connection left open, like a host that stops sending.
+  var firstStalled = !stallFirst;
   final routes = <String, Object>{
     '/manifest.json': {
       'protocol': 1,
@@ -69,6 +74,14 @@ Future<HttpServer> fakeAddon({
   };
   server.listen((req) async {
     final path = Uri.decodeComponent(req.uri.path);
+    if (path == '/audio/a.wav' && !firstStalled) {
+      firstStalled = true;
+      req.response.headers.contentType = ContentType('audio', 'wav');
+      req.response.contentLength = audio.length;
+      req.response.add(audio.sublist(0, audio.length ~/ 2));
+      await req.response.flush();
+      return;
+    }
     if (path == '/audio/b.wav' && !secondRefused) {
       secondRefused = true;
       req.response.statusCode = 503;
@@ -347,5 +360,43 @@ void main() {
       await player.stop();
     });
     storage.deleteSync(recursive: true);
+  });
+
+  testWidgets('a stream that stops partway goes on from there, not past it', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.runAsync(() async {
+      final server = await fakeAddon(seconds: 6, stallFirst: true);
+      final app = await createApp(systemControls: false);
+      // Read when the player's audio backend starts: a quick give-up keeps the test short.
+      JustAudioMediaKit.networkTimeout = 2;
+      final installed = await app.addons.install(
+        'http://127.0.0.1:${server.port}/manifest.json',
+      );
+      final addon = (installed as Installed).addon;
+      final player = app.player;
+      await player.openBook(addon, await addon.client.book('tones'));
+
+      // The first chapter stops sending at 3 s of 6. Before, the player called that the end
+      // and moved on to the second chapter; now it must hear the first one out.
+      var furthest = Duration.zero;
+      final end = DateTime.now().add(const Duration(seconds: 60));
+      while (player.current.value?.chapterIndex == 0) {
+        if (DateTime.now().isAfter(end)) {
+          fail(
+            'Timed out in the first chapter at $furthest '
+            '(${player.status.value.phase} ${player.status.value.message ?? ''})',
+          );
+        }
+        if (player.position > furthest) furthest = player.position;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(furthest, greaterThan(const Duration(milliseconds: 5000)));
+
+      JustAudioMediaKit.networkTimeout = 60;
+      await player.stop();
+      await server.close(force: true);
+    });
   });
 }

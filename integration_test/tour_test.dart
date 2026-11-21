@@ -11,6 +11,7 @@ import 'package:audiobooks/screens/continue_card.dart';
 import 'package:audiobooks/screens/catalog_screen.dart';
 import 'package:audiobooks/widgets/book_tiles.dart';
 import 'package:audiobooks/widgets/mini_player.dart';
+import 'package:audiobooks/widgets/sidebar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -173,12 +174,11 @@ void main() {
     // Wide windows keep the side rail on pages opened over the main screen.
     final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
     if (width >= 760) {
-      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byType(Sidebar), findsOneWidget);
     }
     // Roomy windows can fold the rail to icons and back.
     if (width >= 1100) {
-      bool extended() =>
-          tester.widget<NavigationRail>(find.byType(NavigationRail)).extended;
+      bool extended() => tester.widget<Sidebar>(find.byType(Sidebar)).extended;
       expect(extended(), isTrue);
       await tap(tester, find.byTooltip('Collapse'));
       expect(extended(), isFalse);
@@ -229,9 +229,14 @@ void main() {
     await settle(tester, 500);
     expect(FocusManager.instance.primaryFocus?.debugLabel, 'Search field');
     await tester.enterText(find.byType(TextField), 'orchard');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
+    // Typing searches by itself after a short pause, without Enter.
     await waitFor(tester, find.byType(BookListTile));
     await shot(tester, '08-search');
+    // Emptying the field shows the blank search again, not the last results.
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump();
+    expect(find.byType(BookListTile), findsNothing);
+    expect(find.text('Search all your addons at once.'), findsOneWidget);
 
     // "Restart": a fresh app on the same storage shows Home at once, with the book in the mini
     // player.

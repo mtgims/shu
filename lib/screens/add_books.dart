@@ -108,6 +108,7 @@ Future<void> addBooksFromDevice(BuildContext context) async {
         1 => 'Added ${added.single.title}',
         final n => 'Added $n books',
       }),
+      persist: false,
       action: added.length == 1 && local != null
           ? SnackBarAction(
               label: 'Open',

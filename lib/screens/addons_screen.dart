@@ -6,12 +6,8 @@ import '../addons/addon_store.dart';
 import '../addons/models.dart';
 import '../app.dart';
 import '../sources/server.dart';
-import '../updates/update_banner.dart';
-import '../updates/updater.dart';
 import '../widgets/adaptive.dart';
 import '../widgets/cover_image.dart';
-import '../widgets/more_menu.dart';
-import 'about.dart';
 import 'connect_server.dart';
 import 'extension_settings_screen.dart';
 
@@ -28,19 +24,6 @@ class AddonsScreen extends StatelessWidget {
         titleSpacing: 16 + readableInset(context),
         actions: [
           AddButton(label: 'Add', onPressed: () => showAddSource(context)),
-          MoreMenu(
-            items: [
-              if (Updater.enabled)
-                MenuItemButton(
-                  onPressed: () => _checkForUpdate(context),
-                  child: const Text('Check for updates'),
-                ),
-              MenuItemButton(
-                onPressed: () => showAbout(context),
-                child: const Text('About Shu'),
-              ),
-            ],
-          ),
           // In line with the cards' right edge, as the title is with their left.
           SizedBox(width: readableInset(context)),
         ],
@@ -68,9 +51,13 @@ class AddonsScreen extends StatelessWidget {
             );
           }
           final side = 16 + readableInset(context);
+          final updates = store.updates;
           return ListView(
             padding: EdgeInsets.fromLTRB(side, 8, side, 16),
-            children: [for (final addon in addons) _AddonCard(addon: addon)],
+            children: [
+              if (updates.length > 1) _UpdateAll(updates: updates),
+              for (final addon in addons) _AddonCard(addon: addon),
+            ],
           );
         },
       ),
@@ -78,22 +65,77 @@ class AddonsScreen extends StatelessWidget {
   }
 }
 
-/// Asks GitHub for a newer Shu right away, and offers it.
-Future<void> _checkForUpdate(BuildContext context) async {
-  final updater = AppScope.of(context).updater;
+/// Installs the waiting updates of [addons], one by one; an extension whose notice changed shows
+/// it first, and declining leaves that update waiting.
+Future<void> updateExtensions(
+  BuildContext context,
+  List<InstalledAddon> addons,
+) async {
+  final store = AppScope.of(context).addons;
   final messenger = ScaffoldMessenger.of(context);
-  try {
-    final update = await updater.check(force: true);
-    if (update != null) {
-      offerUpdate(updater, update);
-    } else {
+  final done = <String>[];
+  for (final addon in addons) {
+    try {
+      await store.update(
+        addon,
+        (m) async => context.mounted && await confirmNotice(context, m),
+      );
+      done.add(addon.manifest.name);
+    } on InstallCancelled {
+      // Declined: the update keeps waiting.
+    } on Object catch (e) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Shu is up to date.')),
+        SnackBar(content: Text('${addon.manifest.name}: $e')),
       );
     }
-  } on Object catch (e) {
+  }
+  if (done.isNotEmpty) {
     messenger.showSnackBar(
-      SnackBar(content: Text('Could not check for updates: $e')),
+      SnackBar(content: Text('Updated ${done.join(', ')}')),
+    );
+  }
+}
+
+/// Above the cards when several extensions have an update.
+class _UpdateAll extends StatelessWidget {
+  const _UpdateAll({required this.updates});
+  final List<InstalledAddon> updates;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card.filled(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            const Icon(Icons.system_update_alt),
+            const SizedBox(width: 16),
+            Expanded(child: Text('${updates.length} updates ready')),
+            FilledButton(
+              onPressed: () => updateExtensions(context, updates),
+              child: const Text('Update all'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A dot on the Addons tab while extension updates wait.
+class UpdatesBadge extends StatelessWidget {
+  const UpdatesBadge({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context).addons;
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, child) =>
+          Badge(isLabelVisible: store.updates.isNotEmpty, child: child),
+      child: child,
     );
   }
 }
@@ -175,12 +217,12 @@ class _AddonCard extends StatelessWidget {
               child: Wrap(
                 alignment: WrapAlignment.end,
                 children: [
-                  if (AppScope.of(context).addons.waitingUpdate(addon)
+                  if (AppScope.of(context).addons.availableUpdate(addon)
                       case final version?)
-                    TextButton.icon(
-                      onPressed: () => _reviewUpdate(context),
+                    FilledButton.tonalIcon(
+                      onPressed: () => updateExtensions(context, [addon]),
                       icon: const Icon(Icons.system_update_alt),
-                      label: Text('Review update $version'),
+                      label: Text('Update to $version'),
                     ),
                   if (server != null)
                     TextButton.icon(
@@ -221,25 +263,6 @@ class _AddonCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  /// The update whose notice changed: installed once the user accepts the new notice.
-  Future<void> _reviewUpdate(BuildContext context) async {
-    final store = AppScope.of(context).addons;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await store.reviewUpdate(
-        addon,
-        (m) async => context.mounted && await confirmNotice(context, m),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text('Updated ${addon.manifest.name}')),
-      );
-    } on InstallCancelled {
-      // Declined: the update keeps waiting.
-    } on Object catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
-    }
   }
 
   Future<void> _confirmRemove(BuildContext context) async {

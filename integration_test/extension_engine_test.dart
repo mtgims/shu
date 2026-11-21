@@ -137,7 +137,7 @@ void main() {
     });
   });
 
-  testWidgets('an update with a new warning waits for the user', (
+  testWidgets('updates wait for the user; a new warning is shown first', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -150,34 +150,43 @@ extension = {
   async catalog() { return { books: [], hasMore: false }; },
 };
 ''';
-      final store = await AddonStore.load(
-        await SharedPreferences.getInstance(),
-      );
+      final prefs = await SharedPreferences.getInstance();
+      final store = await AddonStore.load(prefs);
       final file = File('${Directory.systemTemp.createTempSync().path}/n.js')
         ..writeAsStringSync(code('1.0.0', 'First warning'));
       await store.install(file.path, accept: (_) async => true);
-
-      // Same warning: updates on its own.
-      file.writeAsStringSync(code('1.1.0', 'First warning'));
-      final quiet = await store.checkUpdates(force: true);
-      expect(quiet.updated, ['Notice test 1.1.0']);
-      expect(quiet.waiting, isEmpty);
-
-      // A new warning: nothing installs until the user accepts it.
-      file.writeAsStringSync(code('2.0.0', 'Second warning'));
-      final asked = await store.checkUpdates(force: true);
-      expect(asked.updated, isEmpty);
       final addon = store.byId('test.notice')!;
-      expect(asked.waiting, [addon]);
-      expect(addon.manifest.version, '1.1.0');
-      expect(store.waitingUpdate(addon), '2.0.0');
 
-      await store.reviewUpdate(addon, (m) async {
+      // Found, not installed; still there after a restart.
+      file.writeAsStringSync(code('1.1.0', 'First warning'));
+      expect(await store.checkUpdates(force: true), [addon]);
+      expect(store.byId('test.notice')!.manifest.version, '1.0.0');
+      final again = await AddonStore.load(prefs);
+      expect(again.availableUpdate(again.byId('test.notice')!), '1.1.0');
+      expect(again.updates.length, 1);
+      // Found once: the next check doesn't announce it again.
+      expect(await store.checkUpdates(force: true), isEmpty);
+
+      // Same warning: installs without asking.
+      await store.update(addon, (_) async => fail('asked'));
+      expect(store.byId('test.notice')!.manifest.version, '1.1.0');
+      expect(store.updates, isEmpty);
+
+      // A new warning: shown before installing; declining keeps the update waiting.
+      file.writeAsStringSync(code('2.0.0', 'Second warning'));
+      await store.checkUpdates(force: true);
+      final current = store.byId('test.notice')!;
+      await expectLater(
+        store.update(current, (_) async => false),
+        throwsA(isA<InstallCancelled>()),
+      );
+      expect(store.availableUpdate(current), '2.0.0');
+      await store.update(current, (m) async {
         expect(m.notice, 'Second warning');
         return true;
       });
       expect(store.byId('test.notice')!.manifest.version, '2.0.0');
-      expect(store.waitingUpdate(addon), isNull);
+      expect(store.updates, isEmpty);
     });
   });
 }

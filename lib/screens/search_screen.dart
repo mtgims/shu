@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../addons/addon_store.dart';
@@ -36,9 +38,31 @@ class _SearchScreenState extends State<SearchScreen> {
   /// Sections that found nothing: named in one line at the end instead of each taking room.
   final _empty = <_Section>{};
 
+  /// Waits for a pause in the typing before searching ([_typed]).
+  Timer? _typing;
+  String _query = '';
+
+  /// Searches once no letter came for a moment, so a search doesn't go to every addon on each
+  /// keystroke; an emptied field goes back to the blank screen at once.
+  void _typed(String text) {
+    _typing?.cancel();
+    if (text.trim().isEmpty) {
+      _query = '';
+      setState(() {
+        _sections = [];
+        _empty.clear();
+      });
+      return;
+    }
+    _typing = Timer(const Duration(milliseconds: 600), () => _search(text));
+  }
+
   void _search(String text) {
     final query = text.trim();
-    if (query.isEmpty) return;
+    _typing?.cancel();
+    // Enter after the pause already searched for it.
+    if (query.isEmpty || query == _query) return;
+    _query = query;
     final all = AppScope.of(context).addons.addons;
     // Catalog results (books with covers and narrators) before results from sources.
     final addons = [
@@ -74,6 +98,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _typing?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -97,14 +122,24 @@ class _SearchScreenState extends State<SearchScreen> {
               // Clicking elsewhere leaves the field, so Space and the arrows control playback.
               onTapOutside: (_) => widget.focus?.unfocus(),
               textInputAction: TextInputAction.search,
+              onChanged: _typed,
               onSubmitted: _search,
               decoration: InputDecoration(
                 hintText: 'Title, author or narrator',
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(
-                  tooltip: 'Search',
-                  icon: const Icon(Icons.arrow_forward),
-                  onPressed: () => _search(_controller.text),
+                // Typing searches by itself; this empties the field and the results.
+                suffixIcon: ListenableBuilder(
+                  listenable: _controller,
+                  builder: (context, _) => _controller.text.isEmpty
+                      ? const SizedBox.shrink()
+                      : IconButton(
+                          tooltip: 'Clear',
+                          icon: const Icon(Icons.close),
+                          onPressed: () {
+                            _controller.clear();
+                            _typed('');
+                          },
+                        ),
                 ),
               ),
             ),

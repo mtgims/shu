@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../addons/addon_store.dart';
+import '../app.dart' show PageBesideRail;
 import '../addons/content_cache.dart';
 import '../addons/models.dart';
 import '../widgets/book_tiles.dart';
@@ -26,7 +27,7 @@ class CatalogScreen extends StatefulWidget {
     InstalledAddon addon,
     CatalogInfo catalog, {
     String? genre,
-  }) => MaterialPageRoute(
+  }) => PageBesideRail(
     builder: (_) => CatalogScreen(
       addon: addon,
       catalog: catalog,

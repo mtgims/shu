@@ -497,6 +497,10 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
           data: SliderTheme.of(context)
               .copyWith(trackShape: _marks(theme.colorScheme, max)),
           child: Slider(
+            // Under the controls in the player bar: no room for the default 48 px.
+            padding: widget.compact
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 4)
+                : null,
             value: max > 0 ? value : 0,
             max: max > 0 ? max : 1,
             onChanged: max > 0 ? (v) => setState(() => _dragging = v) : null,
