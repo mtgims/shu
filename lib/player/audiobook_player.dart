@@ -103,6 +103,17 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
     audioPipeline: PlayerSettings.hasAudioEffects
         ? AudioPipeline(androidAudioEffects: [_boost])
         : null,
+    // Android's default keeps exactly 50 s ahead, so a stream is fetched in small pieces all the
+    // time and the radio never rests. Instead: fill up to 10 min, then nothing until 3 min are
+    // left (a burst every ~7 min). The byte cap (~16 min of a 256 kbit/s MP3) keeps lossless
+    // files from filling memory.
+    audioLoadConfiguration: const AudioLoadConfiguration(
+      androidLoadControl: AndroidLoadControl(
+        minBufferDuration: Duration(minutes: 3),
+        maxBufferDuration: Duration(minutes: 10),
+        targetBufferBytes: 32 << 20,
+      ),
+    ),
   );
 
   final status = ValueNotifier<PlayerStatus>(PlayerStatus.idle);
@@ -807,6 +818,17 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
 
   bool _askedForNotifications = false;
 
+  /// What the system media controls were last told, see [_broadcast].
+  ({
+    bool playing,
+    ProcessingState state,
+    double speed,
+    bool plus,
+    Duration position,
+    DateTime at,
+  })?
+  _told;
+
   static final _sleepPlus = MediaControl.custom(
     androidIcon: 'drawable/ic_sleep_add',
     label: 'Sleep timer +5 min',
@@ -821,6 +843,33 @@ class AudiobookPlayer extends BaseAudioHandler with SeekHandler {
       // this permission on Android 13+.
       unawaited(DownloadService.askForNotifications());
     }
+    // While a stream loads, Android reports every 500 ms that more of it is buffered. The system
+    // works out the position itself while playing, so tell it only what changed: state, speed,
+    // controls, or a position away from where it expects (a seek).
+    final speed = _player.speed;
+    final plus = sleepTimer.value?.endsAt != null;
+    final at = DateTime.now();
+    final told = _told;
+    if (told != null &&
+        told.playing == playing &&
+        told.state == _player.processingState &&
+        told.speed == speed &&
+        told.plus == plus) {
+      final expected =
+          told.position +
+          (playing ? (at.difference(told.at)) * speed : Duration.zero);
+      if ((_player.position - expected).abs() < const Duration(seconds: 1)) {
+        return;
+      }
+    }
+    _told = (
+      playing: playing,
+      state: _player.processingState,
+      speed: speed,
+      plus: plus,
+      position: _player.position,
+      at: at,
+    );
     playbackState.add(
       playbackState.value.copyWith(
         controls: [

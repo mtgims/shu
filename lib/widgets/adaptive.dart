@@ -6,8 +6,16 @@ import 'package:flutter/material.dart';
 /// bottom sheets, arrows on card rows.
 const wideLayout = 760.0;
 
+/// ...unless they are shorter than this: a phone on its side keeps the phone layout (bottom bar,
+/// mini player, the player sheet), where the player bar would take a quarter of the screen.
+const wideMinHeight = 500.0;
+
 bool isWide(BuildContext context) =>
-    MediaQuery.sizeOf(context).width >= wideLayout;
+    MediaQuery.sizeOf(context).width >= wideLayout && !isShort(context);
+
+/// A window too short for the desktop layout, like a phone on its side.
+bool isShort(BuildContext context) =>
+    MediaQuery.sizeOf(context).height < wideMinHeight;
 
 /// Extra side space that keeps a list at a readable width in a wide window, while its scroll
 /// bar stays at the window's edge.

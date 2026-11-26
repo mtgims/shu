@@ -373,11 +373,15 @@ class _PlayerBar extends StatelessWidget {
                             ),
                           ),
                           Expanded(
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: PlayerExtras(
-                                player: player,
-                                compact: true,
+                            child: LayoutBuilder(
+                              builder: (context, side) => Align(
+                                alignment: Alignment.centerRight,
+                                child: PlayerExtras(
+                                  player: player,
+                                  compact: true,
+                                  // A tablet held upright: not room for every button.
+                                  narrow: side.maxWidth < 240,
+                                ),
                               ),
                             ),
                           ),

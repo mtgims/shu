@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.1 - 2026-11-26
+
+### Changed
+- Phones turned on their side keep the phone layout (bottom bar, mini player, the player you pull
+  up) instead of switching to the desktop one, where the player bar took a quarter of the screen.
+  The bottom bar shows only icons there, and Home drops its title, so more of the page fits
+- On short screens, like a phone on its side, the player puts the cover beside the controls, so
+  the play button is always on screen
+- Where the player bar is narrow, like a tablet held upright, the speed stays in the bar and the
+  sleep timer, bookmark and mini player move into a menu, so the bar stays on one line
+
+### Fixed
+- Less battery while streaming on Android: Shu now fetches several minutes of audio at once and
+  then lets the phone's radio rest, instead of downloading small pieces the whole time, and it
+  stops waking the system media controls twice a second
+- The side bar's labels no longer spill over while it widens (the expand button, or a tablet
+  turned on its side)
+
 ## 0.8.0 - 2026-11-21
 
 ### New

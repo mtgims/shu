@@ -368,12 +368,16 @@ class _RailBody extends StatelessWidget {
       listenable: settings,
       builder: (context, _) {
         final extended = _extended(context);
-        return Sidebar(
-          tabs: _tabs,
-          extended: extended,
-          onToggle: _roomyForRail(context)
-              ? () => settings.railExtended = !extended
-              : null,
+        // Labels only once the rail has grown wide enough for them: they overflowed while it
+        // widened (the expand button, a tablet turned on its side).
+        return LayoutBuilder(
+          builder: (context, box) => Sidebar(
+            tabs: _tabs,
+            extended: extended && box.maxWidth >= 200,
+            onToggle: _roomyForRail(context)
+                ? () => settings.railExtended = !extended
+                : null,
+          ),
         );
       },
     );
@@ -513,6 +517,11 @@ class HomeShellState extends State<HomeShell> {
                       child: bar,
                     ),
                     child: NavigationBar(
+                      // A phone on its side: icons only (labels stay as tooltips), more page.
+                      height: isShort(context) ? 56 : null,
+                      labelBehavior: isShort(context)
+                          ? NavigationDestinationLabelBehavior.alwaysHide
+                          : null,
                       selectedIndex: _barOrder.indexOf(tab),
                       onDestinationSelected: (i) =>
                           currentTab.value = _barOrder[i],

@@ -196,7 +196,35 @@ class NowPlayingScreen extends StatelessWidget {
               ),
             ),
           );
-          // Too short for a useful cover beside the controls (a phone on its side): scroll.
+          // Short and wide (a phone or small tablet on its side): the cover beside the controls,
+          // so play is always on screen. The controls shrink to fit rather than scroll (a scroll
+          // view would fight the drag that closes the sheet).
+          if (box.maxHeight < 620 && box.maxWidth >= box.maxHeight * 1.4) {
+            const gap = 32.0;
+            final side = math
+                .min(box.maxHeight - 16, (box.maxWidth - 48) * 0.4)
+                .clamp(96.0, 380.0);
+            final rest = math.min(520.0, box.maxWidth - 48 - side - gap);
+            return Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  cover(side),
+                  const SizedBox(width: gap),
+                  SizedBox(
+                    width: rest,
+                    height: box.maxHeight - 16,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(width: rest, child: controls),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          // Too short for a useful cover above the controls, and too narrow to put it beside
+          // them: scroll.
           if (box.maxHeight < 620) {
             return SingleChildScrollView(
               padding: padding,

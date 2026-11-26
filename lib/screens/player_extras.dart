@@ -4,16 +4,26 @@ import '../player/audiobook_player.dart';
 import '../player/player_settings.dart';
 import '../widgets/adaptive.dart';
 import '../widgets/mini_window.dart';
+import '../widgets/more_menu.dart';
 import 'marks.dart';
 
 /// Speed, sleep timer and bookmark (and the mini player in the bar), under the player and in the wide player bar.
 class PlayerExtras extends StatelessWidget {
-  const PlayerExtras({super.key, required this.player, this.compact = false});
+  const PlayerExtras({
+    super.key,
+    required this.player,
+    this.compact = false,
+    this.narrow = false,
+  });
   final AudiobookPlayer player;
 
   /// The player bar's form: the speed without its icon, the sleep timer an icon that says more
   /// only while it runs.
   final bool compact;
+
+  /// With [compact], a bar with little room: the speed, and the rest (sleep timer included) in a
+  /// menu, so the bar keeps one row.
+  final bool narrow;
 
   static const presets = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
   static const minSpeed = 0.5;
@@ -25,6 +35,7 @@ class PlayerExtras extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact && narrow) return _narrow(context);
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -95,6 +106,60 @@ class PlayerExtras extends StatelessWidget {
       ],
     );
   }
+
+  Widget _narrow(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      StreamBuilder<double>(
+        stream: player.speedStream,
+        initialData: player.speed,
+        builder: (context, snap) => TextButton(
+          onPressed: () => _pickSpeed(context),
+          child: Text(
+            speedLabel(snap.data ?? 1),
+            semanticsLabel: 'Speed ${speedLabel(snap.data ?? 1)}',
+          ),
+        ),
+      ),
+      ValueListenableBuilder<SleepTimer?>(
+        valueListenable: player.sleepTimer,
+        builder: (context, timer, _) => MoreMenu(
+          items: [
+            MenuItemButton(
+              leadingIcon: Icon(
+                timer == null ? Icons.bedtime_outlined : Icons.bedtime,
+              ),
+              onPressed: () => _pickSleep(context),
+              child: Text(
+                timer == null
+                    ? 'Sleep timer'
+                    : timer.endOfChapter
+                    ? 'Sleep: end of chapter'
+                    : 'Sleep until ${TimeOfDay.fromDateTime(timer.endsAt!).format(context)}',
+              ),
+            ),
+            if (timer?.endsAt != null)
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.more_time),
+                onPressed: player.sleepTimer.extend,
+                child: const Text('Add 5 minutes'),
+              ),
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.bookmark_add_outlined),
+              onPressed: () => _bookmark(context),
+              child: const Text('Bookmark this place'),
+            ),
+            if (MiniWindow.available)
+              const MenuItemButton(
+                leadingIcon: Icon(Icons.picture_in_picture_alt_outlined),
+                onPressed: MiniWindow.enter,
+                child: Text('Mini player'),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   Future<void> _bookmark(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);

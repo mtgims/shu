@@ -29,7 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final scope = AppScope.of(context);
     return Scaffold(
       // Wide windows have the name at the top of the side rail.
-      appBar: isWide(context) ? null : AppBar(title: const Text('Shu')),
+      appBar: isWide(context) || isShort(context)
+          ? null
+          : AppBar(title: const Text('Shu')),
       body: ListenableBuilder(
         // Progress (saved on every pause and chapter) only changes "Continue listening", which
         // follows the library itself; the rows are rebuilt when addons or local books change.
