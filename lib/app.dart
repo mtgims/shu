@@ -1,5 +1,5 @@
-import 'dart:math' show max;
-import 'dart:ui' show AppExitResponse;
+import 'dart:math' show max, min;
+import 'dart:ui' show AppExitResponse, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
 
@@ -234,7 +234,7 @@ class AudiobooksApp extends StatelessWidget {
                         color: Theme.of(context).colorScheme.surface,
                       ),
                     ),
-                    Positioned.fill(child: child!),
+                    Positioned.fill(child: _lowBarsWhenShort(context, child!)),
                     if (isWide(context))
                       Positioned(
                         left: 0,
@@ -388,6 +388,22 @@ class PageBesideRail<T> extends MaterialPageRoute<T> {
       : RailInset(child: super.buildContent(context));
 }
 
+/// A phone on its side, a few hundred pixels tall: every page's app bar lower and its title
+/// smaller, so the pages keep their height.
+Widget _lowBarsWhenShort(BuildContext context, Widget child) {
+  if (!isShort(context)) return child;
+  final theme = Theme.of(context);
+  return Theme(
+    data: theme.copyWith(
+      appBarTheme: theme.appBarTheme.copyWith(
+        toolbarHeight: 48,
+        titleTextStyle: theme.textTheme.titleMedium,
+      ),
+    ),
+    child: child,
+  );
+}
+
 /// A page over the whole window, side rail included (driving mode): the rail fades out as it
 /// opens, as it does for the full player.
 class PageOverRail<T> extends MaterialPageRoute<T> {
@@ -430,6 +446,8 @@ class HomeShell extends StatefulWidget {
 }
 
 class HomeShellState extends State<HomeShell> {
+  final _body = GlobalKey();
+
   final _searchFocus = FocusNode(debugLabel: 'Search field');
 
   /// The cursor into the search field once the Search tab shows (Ctrl+F).
@@ -510,6 +528,9 @@ class HomeShellState extends State<HomeShell> {
     valueListenable: currentTab,
     builder: (context, tab, _) {
       final body = Column(
+        // The same pages whether the tabs are a bar or a rail: turning the phone keeps their
+        // scroll positions and what was typed.
+        key: _body,
         children: [
           Expanded(
             child: IndexedStack(
@@ -537,47 +558,121 @@ class HomeShellState extends State<HomeShell> {
           child: page!,
         ),
         child: PlayerSheet(
-          child: Scaffold(
-            body: body,
-            bottomNavigationBar: isWide(context)
-                ? null
-                // Slides away while the player unfolds over it, or a page covers this one
-                // (the mini player glides down to that page's edge), and back.
-                : ListenableBuilder(
-                    listenable: Listenable.merge([playerExpansion, _covered]),
-                    builder: (context, bar) => FractionalTranslation(
-                      translation: Offset(
-                        0,
-                        max(playerExpansion.value, _covered?.value ?? 0),
-                      ),
-                      child: bar,
-                    ),
-                    child: NavigationBar(
-                      // A phone on its side: icons only (labels stay as tooltips), more page.
-                      height: isShort(context) ? 56 : null,
-                      labelBehavior: isShort(context)
-                          ? NavigationDestinationLabelBehavior.alwaysHide
-                          : null,
-                      selectedIndex: _barOrder.indexOf(tab),
-                      onDestinationSelected: (i) =>
-                          currentTab.value = _barOrder[i],
-                      destinations: [
-                        for (final t in _barOrder.map((i) => _tabs[i]))
-                          NavigationDestination(
-                            icon: t.updates
-                                ? UpdatesBadge(child: Icon(t.icon))
-                                : Icon(t.icon),
-                            selectedIcon: t.updates
-                                ? UpdatesBadge(child: Icon(t.selectedIcon))
-                                : Icon(t.selectedIcon),
-                            label: t.label,
+          child: isShort(context) && !isWide(context)
+              // A phone on its side: the tabs down the left side, as a rail, so the page keeps
+              // the little height there is.
+              ? Scaffold(
+                  body: Row(
+                    children: [
+                      _slidesAway(
+                        const Offset(-1, 0),
+                        // In the bottom bar's colour, edge to edge (under a notch too).
+                        ColoredBox(
+                          color: Theme.of(context).colorScheme.surfaceContainer,
+                          child: Padding(
+                            padding: _railPadding(context),
+                            child: MediaQuery.removePadding(
+                              context: context,
+                              removeLeft: true,
+                              removeTop: true,
+                              removeBottom: true,
+                              child: _rail(tab),
+                            ),
                           ),
-                      ],
-                    ),
+                        ),
+                      ),
+                      Expanded(
+                        // Clear of a notch on the right and of the gesture bar below the mini
+                        // player; the pages' own bars keep clear of the status bar.
+                        child: SafeArea(left: false, top: false, child: body),
+                      ),
+                    ],
                   ),
-          ),
+                )
+              : Scaffold(
+                  body: body,
+                  bottomNavigationBar: isWide(context)
+                      ? null
+                      : _slidesAway(const Offset(0, 1), _bar(tab)),
+                ),
         ),
       );
     },
+  );
+
+  /// Slides [child] away towards [to] while the player unfolds over it, or a page covers this
+  /// one (the mini player glides to that page's edge), and back.
+  Widget _slidesAway(Offset to, Widget child) => ListenableBuilder(
+    listenable: Listenable.merge([playerExpansion, _covered]),
+    builder: (context, child) => FractionalTranslation(
+      translation: to * max(playerExpansion.value, _covered?.value ?? 0),
+      child: child,
+    ),
+    child: child,
+  );
+
+  Widget _icon(SidebarTab t, {bool selected = false}) {
+    final icon = Icon(selected ? t.selectedIcon : t.icon);
+    return t.updates ? UpdatesBadge(child: icon) : icon;
+  }
+
+  Widget _bar(int tab) => NavigationBar(
+    selectedIndex: _barOrder.indexOf(tab),
+    onDestinationSelected: (i) => currentTab.value = _barOrder[i],
+    destinations: [
+      for (final t in _barOrder.map((i) => _tabs[i]))
+        NavigationDestination(
+          icon: _icon(t),
+          selectedIcon: _icon(t, selected: true),
+          label: t.label,
+        ),
+    ],
+  );
+
+  /// Clear of the status bar, the gesture bar and a camera hole. Android marks a band as wide as
+  /// the status bar along the hole's edge as unsafe, and reports the hole as a box from the edge
+  /// to the end of that band. The hole itself is round and sits in the middle of the band, so it
+  /// ends half its size past the middle: the rail keeps clear of that (its items start 12 px in).
+  /// Without the hole's bounds (iOS, whose notch fills the band) it keeps clear of all of it.
+  EdgeInsets _railPadding(BuildContext context) {
+    final view = MediaQuery.of(context);
+    final band = view.padding.left;
+    final holes = [
+      for (final f in view.displayFeatures)
+        if (f.type == DisplayFeatureType.cutout && f.bounds.left < band)
+          min(f.bounds.right, (band + f.bounds.height) / 2),
+    ];
+    return EdgeInsets.only(
+      left: holes.isEmpty ? band : max(0, holes.reduce(max) - 10),
+      top: view.padding.top,
+      bottom: view.padding.bottom,
+    );
+  }
+
+  /// The rail of a phone on its side: centred, and scrolling when the screen is too short for
+  /// all the tabs.
+  Widget _rail(int tab) => LayoutBuilder(
+    builder: (context, box) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: box.maxHeight),
+        child: IntrinsicHeight(
+          child: NavigationRail(
+            backgroundColor: Colors.transparent,
+            labelType: NavigationRailLabelType.all,
+            groupAlignment: 0,
+            selectedIndex: _barOrder.indexOf(tab),
+            onDestinationSelected: (i) => currentTab.value = _barOrder[i],
+            destinations: [
+              for (final t in _barOrder.map((i) => _tabs[i]))
+                NavigationRailDestination(
+                  icon: _icon(t),
+                  selectedIcon: _icon(t, selected: true),
+                  label: Text(t.label),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ),
   );
 }

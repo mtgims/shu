@@ -63,61 +63,17 @@ class NowPlayingScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     // Wide windows show the chapters beside the player instead of in a sheet.
     final sidePane = MediaQuery.sizeOf(context).width >= 1000;
+    // A phone on its side: no bar across the top, its buttons sit beside the cover instead.
+    final short = isShort(context) && entry != null;
     return Scaffold(
       backgroundColor: scheme.surface,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        leading: IconButton(
-          tooltip: 'Close',
-          // A sheet (phones, tablets) folds down; the page of a mouse-driven window closes.
-          icon: Icon(
-            isWide(context) && coverKey == null
-                ? Icons.close
-                : Icons.keyboard_arrow_down,
-          ),
-          onPressed: () => closePlayer(context),
-        ),
-        actions: [
-          if (entry != null && _phone)
-            IconButton(
-              tooltip: 'Driving mode',
-              icon: const Icon(Icons.directions_car_outlined),
-              onPressed: () =>
-                  Navigator.of(context).push(DrivingScreen.route()),
+      appBar: short
+          ? null
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              leading: _close(context),
+              actions: _actions(context, player, entry, sidePane),
             ),
-          if (!sidePane && entry != null)
-            IconButton(
-              tooltip: 'Chapters and bookmarks',
-              icon: const Icon(Icons.format_list_numbered),
-              onPressed: () => _showMarks(context, player, entry),
-            ),
-          ListenableBuilder(
-            listenable: AppScope.of(context).downloads,
-            builder: (context, _) => MoreMenu(
-              items: [
-                MenuItemButton(
-                  leadingIcon: const Icon(Icons.tune),
-                  onPressed: () => showAudioSettings(context, player.settings),
-                  child: const Text('Playback settings'),
-                ),
-                if (entry != null && _phone)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.directions_car_outlined),
-                    onPressed: () =>
-                        Navigator.of(context).push(DrivingScreen.route()),
-                    child: const Text('Driving mode'),
-                  ),
-                if (entry != null)
-                  ?downloadItem(
-                    context,
-                    AppScope.of(context).addons.byId(entry.addonId),
-                    entry,
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
       extendBodyBehindAppBar: true,
       body: Stack(
         fit: StackFit.expand,
@@ -125,12 +81,166 @@ class NowPlayingScreen extends StatelessWidget {
           CoverBackdrop(url: entry?.book.cover),
           if (entry == null)
             const Center(child: Text('Nothing is playing.'))
+          else if (short)
+            _short(context, player, entry, sidePane)
           else
             _body(context, player, entry, sidePane),
         ],
       ),
     );
   }
+
+  Widget _close(BuildContext context) => IconButton(
+    tooltip: 'Close',
+    // A sheet (phones, tablets) folds down; the page of a mouse-driven window closes.
+    icon: Icon(
+      isWide(context) && coverKey == null
+          ? Icons.close
+          : Icons.keyboard_arrow_down,
+    ),
+    onPressed: () => closePlayer(context),
+  );
+
+  List<Widget> _actions(
+    BuildContext context,
+    AudiobookPlayer player,
+    LibraryEntry? entry,
+    bool sidePane,
+  ) => [
+    if (entry != null && _phone)
+      IconButton(
+        tooltip: 'Driving mode',
+        icon: const Icon(Icons.directions_car_outlined),
+        onPressed: () => Navigator.of(context).push(DrivingScreen.route()),
+      ),
+    if (!sidePane && entry != null)
+      IconButton(
+        tooltip: 'Chapters and bookmarks',
+        icon: const Icon(Icons.format_list_numbered),
+        onPressed: () => _showMarks(context, player, entry),
+      ),
+    ListenableBuilder(
+      listenable: AppScope.of(context).downloads,
+      builder: (context, _) => MoreMenu(
+        items: [
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.tune),
+            onPressed: () => showAudioSettings(context, player.settings),
+            child: const Text('Playback settings'),
+          ),
+          if (entry != null && _phone)
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.directions_car_outlined),
+              onPressed: () =>
+                  Navigator.of(context).push(DrivingScreen.route()),
+              child: const Text('Driving mode'),
+            ),
+          if (entry != null)
+            ?downloadItem(
+              context,
+              AppScope.of(context).addons.byId(entry.addonId),
+              entry,
+            ),
+        ],
+      ),
+    ),
+  ];
+
+  /// A phone on its side, a few hundred pixels tall: the cover as tall as the screen on the
+  /// left; on the right a row of buttons (the app bar's, then speed, sleep timer and bookmark
+  /// in their small form), and under it the titles, one line each, the progress, the seek bar
+  /// and the transport, at full size where they fit (shrunk a little where they don't, never
+  /// scrolled: that would fight the drag that folds the sheet).
+  Widget _short(
+    BuildContext context,
+    AudiobookPlayer player,
+    LibraryEntry entry,
+    bool sidePane,
+  ) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final side = math
+              .min(box.maxHeight, box.maxWidth * 0.42)
+              .clamp(96.0, 380.0);
+          return Row(
+            children: [
+              PlayerCover(
+                player: player,
+                entry: entry,
+                size: side,
+                heroTag: playerCoverTag,
+                flightShuttleBuilder: smallCoverInFlight,
+                coverKey: coverKey,
+                away: coverAway,
+                overlay: _StatusBanner(player: player),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _close(context),
+                        const Spacer(),
+                        PlayerExtras(player: player, compact: true),
+                        ..._actions(context, player, entry, sidePane),
+                      ],
+                    ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, room) => FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: SizedBox(
+                            width: room.maxWidth,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListenableBuilder(
+                                  listenable: player.current,
+                                  builder: (_, _) =>
+                                      _Titles(entry: entry, oneLine: true),
+                                ),
+                                _NextInSeries(player: player, entry: entry),
+                                if (entry.book.chapters.length > 1) ...[
+                                  const SizedBox(height: 12),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                    ),
+                                    child: BookProgress(
+                                      player: player,
+                                      entry: entry,
+                                    ),
+                                  ),
+                                ] else
+                                  const SizedBox(height: 8),
+                                RepaintBoundary(
+                                  child: PlayerSeekBar(player: player),
+                                ),
+                                ListenableBuilder(
+                                  listenable: player.current,
+                                  builder: (_, _) => PlayerTransport(
+                                    player: player,
+                                    entry: entry,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
 
   Widget _body(
     BuildContext context,
@@ -361,8 +471,11 @@ class ChapterList extends StatelessWidget {
 }
 
 class _Titles extends StatelessWidget {
-  const _Titles({required this.entry});
+  const _Titles({required this.entry, this.oneLine = false});
   final LibraryEntry entry;
+
+  /// One line each (a phone on its side) instead of up to two.
+  final bool oneLine;
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +486,7 @@ class _Titles extends StatelessWidget {
         Text(
           chapters[entry.chapterIndex].title,
           textAlign: TextAlign.center,
-          maxLines: 2,
+          maxLines: oneLine ? 1 : 2,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.titleLarge,
         ),
@@ -384,7 +497,7 @@ class _Titles extends StatelessWidget {
             if (entry.book.byline.isNotEmpty) entry.book.byline,
           ].join(' · '),
           textAlign: TextAlign.center,
-          maxLines: 2,
+          maxLines: oneLine ? 1 : 2,
           overflow: TextOverflow.ellipsis,
           style: bookTitle(
             theme.textTheme.bodyLarge?.copyWith(

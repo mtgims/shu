@@ -190,78 +190,108 @@ class _DrivingScreenState extends State<DrivingScreen> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, box) {
+                    Widget play(double size) => StreamBuilder<bool>(
+                      stream: player.playingStream,
+                      initialData: player.playing,
+                      builder: (context, snap) {
+                        final playing = snap.data == true;
+                        return SizedBox.square(
+                          dimension: size,
+                          child: IconButton.filled(
+                            tooltip: playing ? 'Pause' : 'Play',
+                            iconSize: size * 0.5,
+                            style: IconButton.styleFrom(
+                              backgroundColor: colors.primary,
+                              foregroundColor: colors.onPrimary,
+                            ),
+                            onPressed: entry == null
+                                ? null
+                                : () {
+                                    HapticFeedback.mediumImpact();
+                                    player.togglePlay();
+                                  },
+                            icon: Icon(
+                              playing
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                    Widget back(double width, double height) => SizedBox(
+                      width: width,
+                      height: height,
+                      child: FilledButton.tonalIcon(
+                        onPressed: entry == null
+                            ? null
+                            : () {
+                                HapticFeedback.lightImpact();
+                                player.rewind();
+                              },
+                        icon: const Icon(Icons.replay, size: 36),
+                        label: Text(
+                          'Back 15 s',
+                          style: theme.textTheme.titleLarge,
+                        ),
+                      ),
+                    );
+                    // Loading or a problem, in plain words.
+                    final status = ValueListenableBuilder<PlayerStatus>(
+                      valueListenable: player.status,
+                      builder: (context, status, _) => Text(
+                        switch (status.phase) {
+                          PlayerPhase.loading => 'Getting the audio…',
+                          PlayerPhase.downloading =>
+                            'Waiting for the download…',
+                          PlayerPhase.error => status.message ?? '',
+                          _ => '',
+                        },
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: status.phase == PlayerPhase.error
+                              ? colors.error
+                              : colors.onSurfaceVariant,
+                        ),
+                      ),
+                    );
+                    // On its side (a car mount): the two side by side, as big as the height
+                    // allows, instead of a play button squeezed small above "Back 15 s".
+                    if (box.maxWidth > box.maxHeight * 1.3) {
+                      final size = math.min(
+                        // Room for the status line under them, at large text sizes too.
+                        box.maxHeight - 56,
+                        box.maxWidth * 0.45,
+                      );
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              play(size),
+                              const SizedBox(width: 32),
+                              back(
+                                math.min(box.maxWidth - size - 32, 360),
+                                math.min(size * 0.6, 140),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          status,
+                        ],
+                      );
+                    }
                     final size =
                         math.min(box.maxWidth, box.maxHeight - 140) * 0.8;
                     return Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        StreamBuilder<bool>(
-                          stream: player.playingStream,
-                          initialData: player.playing,
-                          builder: (context, snap) {
-                            final playing = snap.data == true;
-                            return SizedBox.square(
-                              dimension: size,
-                              child: IconButton.filled(
-                                tooltip: playing ? 'Pause' : 'Play',
-                                iconSize: size * 0.5,
-                                style: IconButton.styleFrom(
-                                  backgroundColor: colors.primary,
-                                  foregroundColor: colors.onPrimary,
-                                ),
-                                onPressed: entry == null
-                                    ? null
-                                    : () {
-                                        HapticFeedback.mediumImpact();
-                                        player.togglePlay();
-                                      },
-                                icon: Icon(
-                                  playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                        play(size),
                         const SizedBox(height: 28),
-                        SizedBox(
-                          width: math.min(box.maxWidth, 420),
-                          height: 80,
-                          child: FilledButton.tonalIcon(
-                            onPressed: entry == null
-                                ? null
-                                : () {
-                                    HapticFeedback.lightImpact();
-                                    player.rewind();
-                                  },
-                            icon: const Icon(Icons.replay, size: 36),
-                            label: Text(
-                              'Back 15 s',
-                              style: theme.textTheme.titleLarge,
-                            ),
-                          ),
-                        ),
+                        back(math.min(box.maxWidth, 420), 80),
                         const SizedBox(height: 12),
-                        // Loading or a problem, in plain words.
-                        ValueListenableBuilder<PlayerStatus>(
-                          valueListenable: player.status,
-                          builder: (context, status, _) => Text(
-                            switch (status.phase) {
-                              PlayerPhase.loading => 'Getting the audio…',
-                              PlayerPhase.downloading =>
-                                'Waiting for the download…',
-                              PlayerPhase.error => status.message ?? '',
-                              _ => '',
-                            },
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: status.phase == PlayerPhase.error
-                                  ? colors.error
-                                  : colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
+                        status,
                       ],
                     );
                   },

@@ -6,6 +6,14 @@
 - On tablets the player bar works like the phone's mini player: pull it up and the player
   follows your finger, drag the player down to fold it back, swipe the bar sideways to stop.
   With a mouse on a computer nothing changes
+- Phones on their side have the tabs on a rail down the left side instead of the bottom bar,
+  so pages keep their height; it scrolls when the screen is too short for all of them
+- The player on a phone on its side: the cover as tall as the screen, its buttons (with speed,
+  sleep timer and bookmark) in one row beside it, and the controls at full size underneath,
+  instead of everything shrunk below a bar
+- Driving mode on a phone on its side (a car mount) puts the big play button and "Back 15 s"
+  side by side, both large
+- On a phone on its side, page titles sit in a lower bar, so more of each page shows
 
 ### Fixed
 - On tablets the side bar, Home and the player bar no longer run into the status bar at the top
@@ -16,6 +24,8 @@
   comes back when you leave it or switch apps)
 - The cover stays sharp while you pull the player up or drag it down, instead of going blurry
   on the way
+- About > View licenses on a computer: the list of packages was hidden under the side bar, and
+  the side bar stayed dimmed until you went back
 
 ## 0.8.1 - 2026-11-26
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app.dart' show PageBesideRail;
 import '../version.dart';
 
 /// One line of a changelog section: a heading ("New") or an entry.
@@ -34,50 +35,97 @@ Future<void> showAbout(BuildContext context) async {
   final release = latestRelease(await rootBundle.loadString('CHANGELOG.md'));
   if (!context.mounted) return;
   final theme = Theme.of(context);
-  showAboutDialog(
+  final icon = Icon(
+    Icons.headphones,
+    size: 40,
+    color: theme.colorScheme.primary,
+  );
+  const version = 'Version $appVersion';
+  // Flutter's showAboutDialog, but its "View licenses" left the dialog open under the licenses
+  // (the side rail stayed dimmed) and opened them under the side rail. This one closes first
+  // and opens them beside the rail like any page.
+  final labels = MaterialLocalizations.of(context);
+  showDialog<void>(
     context: context,
-    applicationName: 'Shu',
-    applicationVersion: 'Version $appVersion',
-    applicationIcon: Icon(
-      Icons.headphones,
-      size: 40,
-      color: theme.colorScheme.primary,
-    ),
-    children: [
-      if (release != null)
-        // A readable width: long entries would otherwise stretch the dialog across the window.
-        SizedBox(
-          width: 520,
-          child: Column(
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 8),
-              Text(
-                "What's new in ${release.title}",
-                style: theme.textTheme.titleMedium,
+              icon,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: ListBody(
+                    children: [
+                      Text('Shu', style: theme.textTheme.headlineSmall),
+                      Text(version, style: theme.textTheme.bodyMedium),
+                    ],
+                  ),
+                ),
               ),
-              for (final line in release.lines)
-                line.heading
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 12, bottom: 4),
-                        child: Text(
-                          line.text,
-                          style: theme.textTheme.titleSmall,
-                        ),
-                      )
-                    : Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('•  '),
-                            Expanded(child: Text(line.text)),
-                          ],
-                        ),
-                      ),
             ],
           ),
+          if (release != null)
+            // A readable width: long entries would otherwise stretch the dialog across the window.
+            SizedBox(
+              width: 520,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
+                  Text(
+                    "What's new in ${release.title}",
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  for (final line in release.lines)
+                    line.heading
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12, bottom: 4),
+                            child: Text(
+                              line.text,
+                              style: theme.textTheme.titleSmall,
+                            ),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('•  '),
+                                Expanded(child: Text(line.text)),
+                              ],
+                            ),
+                          ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            final navigator = Navigator.of(context)..pop();
+            navigator.push(
+              PageBesideRail<void>(
+                builder: (_) => LicensePage(
+                  applicationName: 'Shu',
+                  applicationVersion: version,
+                  applicationIcon: icon,
+                ),
+              ),
+            );
+          },
+          child: Text(labels.viewLicensesButtonLabel),
         ),
-    ],
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(labels.closeButtonLabel),
+        ),
+      ],
+    ),
   );
 }
