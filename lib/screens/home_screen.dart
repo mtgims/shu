@@ -87,7 +87,12 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: () async => setState(() => _generation++),
             // Built lazily: rows further down load when they are scrolled to.
             child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 24),
+              // Without an app bar (wide or short windows) the list starts under the status bar
+              // of a tablet or a phone on its side; an own padding turns off ListView's own.
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(context).top,
+                bottom: 24,
+              ),
               itemCount: rows.length,
               itemBuilder: (_, i) => rows[i](),
             ),

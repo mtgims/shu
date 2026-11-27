@@ -39,29 +39,33 @@ class Sidebar extends StatelessWidget {
     // A Material: the rows' ink needs one.
     return Material(
       color: colors.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(context),
-            const SizedBox(height: 16),
-            ListenableBuilder(
-              listenable: currentTab,
-              builder: (context, _) => Column(
-                children: [
-                  for (final (i, tab) in tabs.indexed)
-                    _TabRow(
-                      tab: tab,
-                      selected: currentTab.value == i,
-                      extended: extended,
-                      onTap: () => goToTab(i),
-                    ),
-                ],
+      // Clear of a tablet's status bar and home indicator (none on desktop).
+      child: SafeArea(
+        right: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(context),
+              const SizedBox(height: 16),
+              ListenableBuilder(
+                listenable: currentTab,
+                builder: (context, _) => Column(
+                  children: [
+                    for (final (i, tab) in tabs.indexed)
+                      _TabRow(
+                        tab: tab,
+                        selected: currentTab.value == i,
+                        extended: extended,
+                        onTap: () => goToTab(i),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(child: _InProgress(extended: extended)),
-          ],
+              Expanded(child: _InProgress(extended: extended)),
+            ],
+          ),
         ),
       ),
     );

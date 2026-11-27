@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.2 - 2026-11-27
+
+### Changed
+- On tablets the player bar works like the phone's mini player: pull it up and the player
+  follows your finger, drag the player down to fold it back, swipe the bar sideways to stop.
+  With a mouse on a computer nothing changes
+
+### Fixed
+- On tablets the side bar, Home and the player bar no longer run into the status bar at the top
+  or the home indicator at the bottom
+
 ## 0.8.1 - 2026-11-26
 
 ### Changed

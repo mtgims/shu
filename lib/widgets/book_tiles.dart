@@ -17,6 +17,7 @@ import 'title_parts.dart';
 void openBook(BuildContext context, InstalledAddon addon, BookSummary summary) {
   Navigator.of(context).push(
     PageBesideRail<void>(
+      withSheet: true,
       builder: (_) => BookScreen(addon: addon, summary: summary),
     ),
   );
@@ -26,6 +27,7 @@ void openBook(BuildContext context, InstalledAddon addon, BookSummary summary) {
 void openEntry(BuildContext context, InstalledAddon addon, LibraryEntry entry) {
   Navigator.of(context).push(
     PageBesideRail<void>(
+      withSheet: true,
       builder: (_) => BookScreen(
         addon: addon,
         summary: entry.book,

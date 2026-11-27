@@ -203,7 +203,8 @@ class AudiobooksApp extends StatelessWidget {
             pureBlack: player.settings.pureBlack,
           ),
           themeMode: player.settings.themeMode,
-          home: RailInset(child: HomeShell(key: homeShellKey)),
+          // Its player sheet leaves the rail's room ([PlayerSheet]).
+          home: HomeShell(key: homeShellKey),
           // The pages and rail read the full window size even while the mini window shows.
           builder: (context, child) => MiniWindowFrame(
             child: Builder(
@@ -249,8 +250,26 @@ class AudiobooksApp extends StatelessWidget {
                                     child: rail,
                                   ),
                                 ),
-                          child: const Row(
-                            children: [_SideRail(), VerticalDivider(width: 1)],
+                          // On a tablet the player unfolds as a sheet over the whole window instead: the
+                          // rail fades the same way as it unfolds.
+                          child: ValueListenableBuilder(
+                            valueListenable: playerExpansion,
+                            builder: (context, out, rail) => out == 0
+                                ? rail!
+                                : IgnorePointer(
+                                    child: Opacity(
+                                      opacity:
+                                          1 -
+                                          const Interval(0, 0.5).transform(out),
+                                      child: rail,
+                                    ),
+                                  ),
+                            child: const Row(
+                              children: [
+                                _SideRail(),
+                                VerticalDivider(width: 1),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -351,11 +370,16 @@ class PageBesideRail<T> extends MaterialPageRoute<T> {
     required super.builder,
     super.settings,
     super.fullscreenDialog,
+    this.withSheet = false,
   });
 
+  /// The page is a [PlayerSheet], which leaves the rail's room itself.
+  final bool withSheet;
+
   @override
-  Widget buildContent(BuildContext context) =>
-      RailInset(child: super.buildContent(context));
+  Widget buildContent(BuildContext context) => withSheet
+      ? super.buildContent(context)
+      : RailInset(child: super.buildContent(context));
 }
 
 class _RailBody extends StatelessWidget {

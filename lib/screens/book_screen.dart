@@ -225,6 +225,7 @@ class _BookScreenState extends State<BookScreen> {
   void _openVersion(Book work, Version v) {
     Navigator.of(context).push(
       PageBesideRail<void>(
+        withSheet: true,
         builder: (_) => BookScreen(
           addon: v.addon,
           summary: v.release,

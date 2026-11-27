@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,10 @@ const wideLayout = 760.0;
 /// ...unless they are shorter than this: a phone on its side keeps the phone layout (bottom bar,
 /// mini player, the player sheet), where the player bar would take a quarter of the screen.
 const wideMinHeight = 500.0;
+
+/// Phones and tablets, where a finger rather than a mouse works the app: the player unfolds as a
+/// sheet pulled out of the player bar, also in the wide layout of a tablet. Tests may set it.
+var touchFirst = Platform.isAndroid || Platform.isIOS;
 
 bool isWide(BuildContext context) =>
     MediaQuery.sizeOf(context).width >= wideLayout && !isShort(context);

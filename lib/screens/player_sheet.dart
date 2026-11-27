@@ -12,10 +12,13 @@ import 'now_playing_screen.dart';
 /// player steps aside for the sheet drawn out of it, and the navigation bar slides away.
 final playerExpansion = ValueNotifier<double>(0);
 
-/// Opens the player: on a phone the page's sheet ([sheet], or the one around [context]) unfolds;
-/// in wide windows (or on a page without a sheet) the player's route opens.
+/// Opens the player: on phones and tablets the page's sheet ([sheet], the one around [context],
+/// or the shown page's for the side rail, which sits outside the pages) unfolds; with a mouse in
+/// a wide window (or on a page without a sheet) the player's route opens.
 void openPlayer(BuildContext context, [PlayerSheetState? sheet]) {
-  sheet = isWide(context) ? null : sheet ?? PlayerSheet.maybeOf(context);
+  sheet = !isWide(context) || touchFirst
+      ? sheet ?? PlayerSheet.maybeOf(context) ?? PlayerSheet._shown()
+      : null;
   if (sheet != null) {
     sheet.open();
   } else {
@@ -51,6 +54,15 @@ class PlayerSheet extends StatefulWidget {
       context.findAncestorStateOfType<PlayerSheetState>();
 
   static final _unfolded = <PlayerSheetState>{};
+  static final _mounted = <PlayerSheetState>{};
+
+  /// The sheet of the page on top, if it has one.
+  static PlayerSheetState? _shown() {
+    for (final sheet in _mounted) {
+      if (sheet._route?.isCurrent ?? false) return sheet;
+    }
+    return null;
+  }
 
   /// Folds every sheet at once: another page is about to cover them.
   static void foldAll() {
@@ -72,6 +84,18 @@ class PlayerSheetState extends State<PlayerSheet>
 
   /// Its cover, measured rather than assumed: the row centres it against the buttons.
   BuildContext? miniCover;
+
+  /// How the card looks while the sheet grows out of it ([row] its contents' opacity, laid out
+  /// at [rowWidth]), and its corner radius: the phone's [MiniCard] unless the card says
+  /// otherwise (a tablet's player bar).
+  Widget Function(double row, double rowWidth)? flyingCard;
+  double cardRadius = 14;
+
+  @override
+  void initState() {
+    super.initState();
+    PlayerSheet._mounted.add(this);
+  }
 
   final _pageKey = GlobalKey();
   final _coverKey = GlobalKey();
@@ -96,6 +120,7 @@ class PlayerSheetState extends State<PlayerSheet>
 
   @override
   void dispose() {
+    PlayerSheet._mounted.remove(this);
     PlayerSheet._unfolded.remove(this);
     if (_out.value > 0) playerExpansion.value = 0;
     _out.dispose();
@@ -209,7 +234,9 @@ class PlayerSheetState extends State<PlayerSheet>
     return Stack(
       fit: StackFit.expand,
       children: [
-        widget.child,
+        // The page leaves the side rail's room here, inside the sheet, so the sheet itself can
+        // take the whole window on a tablet (the rail fades as it unfolds).
+        RailInset(child: widget.child),
         if (t > 0)
           LayoutBuilder(
             builder: (context, box) => _sheet(context, box.biggest, t),
@@ -226,6 +253,7 @@ class PlayerSheetState extends State<PlayerSheet>
     final small =
         _measure(miniCover) ?? MiniCard.coverRect.shift(origin.topLeft);
     final cover = Rect.lerp(small, _coverAtRest() ?? small, t)!;
+    final row = 1 - const Interval(0, 0.2).transform(t);
     return GestureDetector(
       onVerticalDragStart: (_) => grab(),
       onVerticalDragUpdate: (d) => dragBy(d.primaryDelta ?? 0),
@@ -233,7 +261,7 @@ class PlayerSheetState extends State<PlayerSheet>
       onVerticalDragCancel: () => release(0),
       child: ClipRRect(
         clipper: _Outline(
-          RRect.fromRectAndRadius(rect, Radius.circular(14 * (1 - t))),
+          RRect.fromRectAndRadius(rect, Radius.circular(cardRadius * (1 - t))),
         ),
         clipBehavior: t < 1 ? Clip.antiAlias : Clip.none,
         child: Stack(
@@ -242,13 +270,15 @@ class PlayerSheetState extends State<PlayerSheet>
             if (entry != null && t < 1)
               Positioned.fromRect(
                 rect: rect,
-                child: MiniCard(
-                  player: player,
-                  entry: entry,
-                  flying: true,
-                  row: 1 - const Interval(0, 0.2).transform(t),
-                  rowWidth: origin.width,
-                ),
+                child:
+                    flyingCard?.call(row, origin.width) ??
+                    MiniCard(
+                      player: player,
+                      entry: entry,
+                      flying: true,
+                      row: row,
+                      rowWidth: origin.width,
+                    ),
               ),
             Opacity(
               opacity: const Interval(0.3, 0.8).transform(t),
@@ -267,8 +297,7 @@ class PlayerSheetState extends State<PlayerSheet>
                   url: entry.book.cover,
                   radius: lerpDouble(8, 16, t)!,
                   decodeWidth: BookCover.decodeWidthFor(
-                    MiniCard.coverRect.width *
-                        MediaQuery.devicePixelRatioOf(context),
+                    small.width * MediaQuery.devicePixelRatioOf(context),
                   ),
                 ),
               ),

@@ -69,7 +69,12 @@ class NowPlayingScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         leading: IconButton(
           tooltip: 'Close',
-          icon: Icon(isWide(context) ? Icons.close : Icons.keyboard_arrow_down),
+          // A sheet (phones, tablets) folds down; the page of a mouse-driven window closes.
+          icon: Icon(
+            isWide(context) && coverKey == null
+                ? Icons.close
+                : Icons.keyboard_arrow_down,
+          ),
           onPressed: () => closePlayer(context),
         ),
         actions: [

@@ -187,8 +187,12 @@ class MiniCard extends StatelessWidget {
 /// aside while the sheet is out (the sheet draws it then), and a finger pulling it up takes the
 /// sheet up with it.
 class _Unfolds extends StatefulWidget {
-  const _Unfolds({required this.child});
+  const _Unfolds({required this.child, this.flying, this.radius = 14});
   final Widget child;
+
+  /// The card's look in flight and its corners, for the sheet (see [PlayerSheetState.flyingCard]).
+  final Widget Function(double row, double rowWidth)? flying;
+  final double radius;
 
   @override
   State<_Unfolds> createState() => _UnfoldsState();
@@ -200,12 +204,30 @@ class _UnfoldsState extends State<_Unfolds> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _sheet = PlayerSheet.maybeOf(context)?..card = context;
+    _sheet = PlayerSheet.maybeOf(context)
+      ?..card = context
+      ..flyingCard = widget.flying
+      ..cardRadius = widget.radius;
+  }
+
+  @override
+  void didUpdateWidget(_Unfolds old) {
+    super.didUpdateWidget(old);
+    if (_sheet?.card == context) {
+      _sheet!
+        ..flyingCard = widget.flying
+        ..cardRadius = widget.radius;
+    }
   }
 
   @override
   void dispose() {
-    if (_sheet?.card == context) _sheet!.card = null;
+    if (_sheet?.card == context) {
+      _sheet!
+        ..card = null
+        ..flyingCard = null
+        ..cardRadius = 14;
+    }
     super.dispose();
   }
 
@@ -312,95 +334,148 @@ class StatusLine extends StatelessWidget {
 }
 
 /// Wide windows: every control at hand in one slim row, as in desktop music players, so
-/// listening never needs the full-screen player. The book on the left opens it.
+/// listening never needs the full-screen player. The book on the left opens it. On a tablet it
+/// is also where the player sheet unfolds from, as the phone's card: pulled up, or swiped
+/// sideways to stop. [flying] is the look the sheet draws while it grows out of it ([row] the
+/// contents' opacity, laid out at [rowWidth], the card's own width).
 class _PlayerBar extends StatelessWidget {
-  const _PlayerBar({required this.player, required this.entry});
+  const _PlayerBar({
+    required this.player,
+    required this.entry,
+    this.flying = false,
+    this.row = 1,
+    this.rowWidth,
+  });
   final AudiobookPlayer player;
   final LibraryEntry entry;
+  final bool flying;
+  final double row;
+  final double? rowWidth;
 
   /// The middle (controls over the seek bar) is at most this wide, and stays centred.
   static const _middle = 560.0;
 
+  static const _radius = 16.0;
+
   @override
   Widget build(BuildContext context) {
     // In the book's colours, like the phone's card.
-    return MiniPlayerTheme(
+    final card = MiniPlayerTheme(
       url: entry.book.cover,
       child: Builder(
         builder: (context) {
           final colors = Theme.of(context).colorScheme;
-          // A card floating above the page's bottom edge, as on phones.
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Material(
-              color: Color.alphaBlend(
-                colors.primaryContainer.withValues(alpha: 0.45),
-                colors.surfaceContainerHigh,
-              ),
-              elevation: 3,
-              borderRadius: BorderRadius.circular(16),
-              clipBehavior: Clip.antiAlias,
-              // As tall as its contents, also in a page's bottom bar slot (which offers the
-              // whole height): the column lets the row measure its children without it.
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                    child: LayoutBuilder(
-                      builder: (context, box) => Row(
-                        children: [
-                          // Equal sides keep the middle centred whatever the book's title.
-                          Expanded(child: _book(context)),
-                          SizedBox(
-                            width: min(_middle, box.maxWidth * 0.46),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                PlayerTransport(
-                                  player: player,
-                                  entry: entry,
-                                  compact: true,
-                                ),
-                                // Repaints often; keep it from repainting the rest of the bar.
-                                RepaintBoundary(
-                                  child: PlayerSeekBar(
-                                    player: player,
-                                    compact: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, side) => Align(
-                                alignment: Alignment.centerRight,
-                                child: PlayerExtras(
-                                  player: player,
-                                  compact: true,
-                                  // A tablet held upright: not room for every button.
-                                  narrow: side.maxWidth < 240,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+          return Material(
+            color: Color.alphaBlend(
+              colors.primaryContainer.withValues(alpha: 0.45),
+              colors.surfaceContainerHigh,
+            ),
+            elevation: 3,
+            borderRadius: BorderRadius.circular(_radius),
+            clipBehavior: Clip.antiAlias,
+            child: flying
+                // Laid out at the card's width while the sheet is wider, as the phone's card.
+                ? IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      heightFactor: 1,
+                      child: SizedBox(
+                        width: rowWidth,
+                        child: Opacity(opacity: row, child: _contents(context)),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  )
+                : _contents(context),
           );
         },
       ),
     );
+    if (flying) return card;
+    // A card floating above the page's bottom edge, as on phones (and above a tablet's home
+    // indicator).
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: touchFirst
+            ? _SwipeAway(
+                key: ValueKey(entry.key),
+                onGone: player.stop,
+                child: _Unfolds(
+                  radius: _radius,
+                  flying: (row, width) => _PlayerBar(
+                    player: player,
+                    entry: entry,
+                    flying: true,
+                    row: row,
+                    rowWidth: width,
+                  ),
+                  child: card,
+                ),
+              )
+            : card,
+      ),
+    );
   }
+
+  /// As tall as its contents, also in a page's bottom bar slot (which offers the whole height):
+  /// the column lets the row measure its children without it.
+  Widget _contents(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              // Equal sides keep the middle centred whatever the book's title.
+              Expanded(child: _book(context)),
+              SizedBox(
+                width: min(_middle, box.maxWidth * 0.46),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PlayerTransport(
+                      player: player,
+                      entry: entry,
+                      compact: true,
+                    ),
+                    // Repaints often; keep it from repainting the rest of the bar.
+                    RepaintBoundary(
+                      child: PlayerSeekBar(player: player, compact: true),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, side) => Align(
+                    alignment: Alignment.centerRight,
+                    child: PlayerExtras(
+                      player: player,
+                      compact: true,
+                      // A tablet held upright: not room for every button.
+                      narrow: side.maxWidth < 240,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 
   /// The cover and title; a click opens the player.
   Widget _book(BuildContext context) {
     final theme = Theme.of(context);
+    final cover = BookCover(
+      title: entry.book.title,
+      url: entry.book.cover,
+      size: 56,
+      radius: 8,
+    );
     return Align(
       alignment: Alignment.centerLeft,
       child: Tooltip(
@@ -414,17 +489,19 @@ class _PlayerBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Hero(
-                  tag: playerCoverTag,
-                  transitionOnUserGestures: true,
-                  createRectTween: straightFlight,
-                  child: BookCover(
-                    title: entry.book.title,
-                    url: entry.book.cover,
-                    size: 56,
-                    radius: 8,
+                // The sheet moves its own copy of the cover (in flight, the spot stays empty);
+                // the player's page flies this one with a mouse.
+                if (flying)
+                  const SizedBox.square(dimension: 56)
+                else if (touchFirst)
+                  _CoverSpot(child: cover)
+                else
+                  Hero(
+                    tag: playerCoverTag,
+                    transitionOnUserGestures: true,
+                    createRectTween: straightFlight,
+                    child: cover,
                   ),
-                ),
                 const SizedBox(width: 12),
                 Flexible(
                   child: Column(

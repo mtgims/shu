@@ -28,6 +28,7 @@ class CatalogScreen extends StatefulWidget {
     CatalogInfo catalog, {
     String? genre,
   }) => PageBesideRail(
+    withSheet: true,
     builder: (_) => CatalogScreen(
       addon: addon,
       catalog: catalog,
