@@ -10,6 +10,10 @@
 ### Fixed
 - On tablets the side bar, Home and the player bar no longer run into the status bar at the top
   or the home indicator at the bottom
+- Driving mode on tablets covers the whole screen, side bar included, so nothing stays lit next
+  to it when it goes black
+- Driving mode's black screen dims the backlight on iPhone and iPad too (your own brightness
+  comes back when you leave it or switch apps)
 
 ## 0.8.1 - 2026-11-26
 

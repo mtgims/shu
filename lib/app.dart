@@ -107,14 +107,18 @@ final _dialogs = _DialogObserver();
 
 final _player = _PlayerObserver();
 
-/// Whether the full player is open, so the side rail beside the pages can make way for it.
+/// Whether the full player (or another page over the whole window) is open, so the side rail
+/// beside the pages can make way for it.
 class _PlayerObserver extends NavigatorObserver {
-  /// How far the full player is open, while it is on screen (opening, open or closing).
+  /// How far it is open, while it is on screen (opening, open or closing).
   final opening = ValueNotifier<Animation<double>?>(null);
+
+  static bool _overRail(Route<dynamic> route) =>
+      route is PlayerRoute || route is PageOverRail;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is! PlayerRoute) return;
+    if (route is! ModalRoute || !_overRail(route)) return;
     final animation = route.animation!;
     opening.value = animation;
     animation.addStatusListener((status) {
@@ -126,7 +130,9 @@ class _PlayerObserver extends NavigatorObserver {
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is PlayerRoute && opening.value == route.animation) {
+    if (route is ModalRoute &&
+        _overRail(route) &&
+        opening.value == route.animation) {
       opening.value = null;
     }
   }
@@ -380,6 +386,12 @@ class PageBesideRail<T> extends MaterialPageRoute<T> {
   Widget buildContent(BuildContext context) => withSheet
       ? super.buildContent(context)
       : RailInset(child: super.buildContent(context));
+}
+
+/// A page over the whole window, side rail included (driving mode): the rail fades out as it
+/// opens, as it does for the full player.
+class PageOverRail<T> extends MaterialPageRoute<T> {
+  PageOverRail({required super.builder, super.fullscreenDialog});
 }
 
 class _RailBody extends StatelessWidget {

@@ -58,9 +58,9 @@ class DownloadService {
   }
 
   /// Sets the screen's brightness for this app's window, 0 to 1, or the system's again with null
-  /// (driving mode's black screen). Android only.
+  /// (driving mode's black screen). Android and iOS (AppDelegate.swift).
   static Future<void> screenBrightness(double? value) async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     try {
       await _channel.invokeMethod<void>('screenBrightness', value);
     } on PlatformException catch (e) {
