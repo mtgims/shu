@@ -1,0 +1,27 @@
+# Builds an unsigned iOS app for testing, on request only (Actions → iOS → Run workflow). The
+# .ipa is not signed: install it with a sideloading tool that signs it with your own Apple ID.
+name: iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          cache: true
+      - run: flutter build ios --release --no-codesign
+      - name: Package
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qr shu-ios-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shu-ios-unsigned
+          path: shu-ios-unsigned.ipa
+          retention-days: 7
