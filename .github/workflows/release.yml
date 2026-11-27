@@ -102,6 +102,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  # Not signed: installed with a sideloading tool that signs it with the user's own Apple ID.
+  # iPhones and iPads can't update an app themselves, so the update check is left out.
+  ios:
+    if: github.event_name == 'release' # a manual run only builds the AppImage
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          cache: true
+      - run: flutter build ios --release --no-codesign --dart-define=UPDATE_CHECK=false
+      - name: Package
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qr shu-ios.ipa Payload
+      - run: gh release upload ${{ github.event.release.tag_name }} shu-ios.ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   # A single file that runs on most Linux distributions, with libmpv and GTK packed in.
   appimage:
     runs-on: ubuntu-22.04 # the oldest glibc still built on, so it runs on older systems too

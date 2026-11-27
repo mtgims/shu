@@ -2,6 +2,10 @@
 
 ## 0.8.2 - 2026-11-27
 
+### New
+- A download for iPhone and iPad (`shu-ios.ipa`), installed with a sideloading app such as
+  SideStore; torrent books don't play there
+
 ### Changed
 - On tablets the player bar works like the phone's mini player: pull it up and the player
   follows your finger, drag the player down to fold it back, swipe the bar sideways to stop.

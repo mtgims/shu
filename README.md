@@ -47,7 +47,7 @@ server, and can be extended with small JavaScript extensions.
 - Light and dark themes, six accent colours and a pure black mode for OLED screens, under
   **Settings → Appearance**
 
-macOS and iOS builds are set up but haven't been tested yet.
+iPhone and iPad work too (see below); macOS is set up but hasn't been tested yet.
 
 ## Download
 
@@ -61,6 +61,10 @@ The buttons above get the latest version; older ones are on the
   needs. Or unpack `shu-linux-x64.tar.gz` and run `shu/shu`, which needs libmpv (`libmpv2` on
   Debian/Ubuntu, `mpv-libs` on Fedora, `mpv` on Arch).
 - **Windows**: unpack `shu-windows-x64.zip` and run `Shu\shu.exe`.
+- **iPhone and iPad**: [`shu-ios.ipa`](https://github.com/mtgims/shu/releases/latest/download/shu-ios.ipa) isn't signed, so it
+  goes on with a sideloading app that signs it with your own Apple ID, such as SideStore or
+  AltStore. With a free Apple ID the app has to be refreshed every 7 days (SideStore can do that
+  on the device). Torrent books don't play on iOS, and updates come through the sideloading app.
 
 Shu checks for a new version once a day. On Android it downloads and installs it for you (the
 first time, Android asks you to allow installs from Shu); on Linux and Windows it downloads the
