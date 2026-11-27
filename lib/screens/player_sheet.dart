@@ -252,7 +252,8 @@ class PlayerSheetState extends State<PlayerSheet>
     final entry = player.current.value;
     final small =
         _measure(miniCover) ?? MiniCard.coverRect.shift(origin.topLeft);
-    final cover = Rect.lerp(small, _coverAtRest() ?? small, t)!;
+    final rest = _coverAtRest();
+    final cover = Rect.lerp(small, rest ?? small, t)!;
     final row = 1 - const Interval(0, 0.2).transform(t);
     return GestureDetector(
       onVerticalDragStart: (_) => grab(),
@@ -290,14 +291,16 @@ class PlayerSheetState extends State<PlayerSheet>
             if (entry != null && t < 1)
               Positioned.fromRect(
                 rect: cover,
-                // The mini player's copy, already decoded: the player's sharp one takes over
-                // where it rests.
+                // Decoded at the player's size (the image its own cover uses), so it stays sharp
+                // on the way; until that is ready, and on the first frame before the player is
+                // laid out, it shows the mini player's copy, already decoded.
                 child: BookCover(
                   title: entry.book.title,
                   url: entry.book.cover,
                   radius: lerpDouble(8, 16, t)!,
                   decodeWidth: BookCover.decodeWidthFor(
-                    small.width * MediaQuery.devicePixelRatioOf(context),
+                    (rest ?? small).width *
+                        MediaQuery.devicePixelRatioOf(context),
                   ),
                 ),
               ),

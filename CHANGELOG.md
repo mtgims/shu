@@ -14,6 +14,8 @@
   to it when it goes black
 - Driving mode's black screen dims the backlight on iPhone and iPad too (your own brightness
   comes back when you leave it or switch apps)
+- The cover stays sharp while you pull the player up or drag it down, instead of going blurry
+  on the way
 
 ## 0.8.1 - 2026-11-26
 
